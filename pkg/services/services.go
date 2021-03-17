@@ -8,6 +8,7 @@ import (
 
 	"github.com/iskorotkov/bully-election/pkg/messages"
 	"github.com/iskorotkov/bully-election/pkg/network"
+	"go.uber.org/zap"
 )
 
 var (
@@ -22,13 +23,15 @@ type ServiceDiscovery struct {
 	client      *network.Client
 	leader      *Instance
 	pingTimeout time.Duration
+	logger      *zap.Logger
 }
 
-func NewServiceDiscovery(pingTimeout time.Duration) *ServiceDiscovery {
+func NewServiceDiscovery(pingTimeout time.Duration, logger *zap.Logger) *ServiceDiscovery {
 	return &ServiceDiscovery{
-		client:      network.NewClient(),
+		client:      network.NewClient(logger.Named("client")),
 		leader:      nil,
 		pingTimeout: pingTimeout,
+		logger:      logger,
 	}
 }
 
@@ -37,7 +40,10 @@ func (s *ServiceDiscovery) MakeLeader(leader *Instance) {
 }
 
 func (s *ServiceDiscovery) PingLeader() (bool, error) {
+	logger := s.logger.Named("ping-leader")
+
 	if s.leader == nil {
+		logger.Warn("leader is nil")
 		return false, ErrNoLeader
 	}
 
@@ -50,6 +56,7 @@ func (s *ServiceDiscovery) PingLeader() (bool, error) {
 	}
 
 	if err := s.client.Send(ctx, msg); err != nil {
+		logger.Warn("couldn't send message", zap.Any("message", msg))
 		return false, err
 	}
 

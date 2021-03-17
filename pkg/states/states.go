@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/iskorotkov/bully-election/pkg/services"
+	"go.uber.org/zap"
 )
 
 var (
@@ -18,162 +19,224 @@ type State interface {
 	OnVictory(source services.Instance) (State, error)
 }
 
+type Config struct {
+	ElectionTimeout  time.Duration
+	VictoryTimeout   time.Duration
+	ServiceDiscovery *services.ServiceDiscovery
+	Logger           *zap.Logger
+}
+
 // Starting.
 
-type Starting struct{}
-
-func (s *Starting) Tick(elapsed time.Duration) (State, error) {
-	return &StartingElection{}, nil
+func Start(config Config) State {
+	return &starting{
+		config: config,
+		logger: config.Logger.Named("starting"),
+	}
 }
 
-func (s *Starting) OnElection(source services.Instance) (State, error) {
+type starting struct {
+	config Config
+	logger *zap.Logger
+}
+
+func (s *starting) Tick(elapsed time.Duration) (State, error) {
+	return startElection(s.config), nil
+}
+
+func (s *starting) OnElection(source services.Instance) (State, error) {
 	return s, nil
 }
 
-func (s *Starting) OnAlive(source services.Instance) (State, error) {
+func (s *starting) OnAlive(source services.Instance) (State, error) {
 	return s, nil
 }
 
-func (s *Starting) OnVictory(source services.Instance) (State, error) {
-	return &NotElected{}, nil
+func (s *starting) OnVictory(source services.Instance) (State, error) {
+	return notElect(s.config), nil
 }
 
 // Starting election.
 
-type StartingElection struct {
-	elapsed  time.Duration
-	services services.ServiceDiscovery
+func startElection(config Config) State {
+	return &startingElection{
+		config: config,
+		logger: config.Logger.Named("starting-election"),
+	}
 }
 
-func (s *StartingElection) Tick(elapsed time.Duration) (State, error) {
-	ok, err := s.services.MustBeLeader()
+type startingElection struct {
+	config Config
+	logger *zap.Logger
+}
+
+func (s *startingElection) Tick(elapsed time.Duration) (State, error) {
+	ok, err := s.config.ServiceDiscovery.MustBeLeader()
 	if err != nil {
 		return s, err
 	}
 
 	if ok {
-		s.services.AnnounceLeadership()
-		return &Elected{}, nil
+		s.config.ServiceDiscovery.AnnounceLeadership()
+		return elect(s.config), nil
 	}
 
-	s.services.StartElection()
-	return &StartedElection{}, nil
+	s.config.ServiceDiscovery.StartElection()
+	return onElectionStarted(s.config), nil
 }
 
-func (s *StartingElection) OnElection(source services.Instance) (State, error) {
+func (s *startingElection) OnElection(source services.Instance) (State, error) {
 	return s, nil
 }
 
-func (s *StartingElection) OnAlive(source services.Instance) (State, error) {
+func (s *startingElection) OnAlive(source services.Instance) (State, error) {
 	return s, nil
 }
 
-func (s *StartingElection) OnVictory(source services.Instance) (State, error) {
-	return &NotElected{}, nil
+func (s *startingElection) OnVictory(source services.Instance) (State, error) {
+	return notElect(s.config), nil
 }
 
 // Started election.
 
-type StartedElection struct {
-	elapsed time.Duration
+func onElectionStarted(config Config) State {
+	return &startedElection{
+		elapsed: config.ElectionTimeout,
+		config:  config,
+		logger:  config.Logger.Named("started-election"),
+	}
 }
 
-func (s *StartedElection) Tick(elapsed time.Duration) (State, error) {
+type startedElection struct {
+	elapsed time.Duration
+	config  Config
+	logger  *zap.Logger
+}
+
+func (s *startedElection) Tick(elapsed time.Duration) (State, error) {
 	s.elapsed -= elapsed
 	if s.elapsed <= 0 {
-		return &Elected{}, nil
+		return elect(s.config), nil
 	}
 
 	return s, nil
 }
 
-func (s *StartedElection) OnElection(source services.Instance) (State, error) {
+func (s *startedElection) OnElection(source services.Instance) (State, error) {
 	return s, nil
 }
 
-func (s *StartedElection) OnAlive(source services.Instance) (State, error) {
+func (s *startedElection) OnAlive(source services.Instance) (State, error) {
 	// TODO: Fill WaitingForElection.
-	return &WaitingForElection{}, nil
+	return waitForElection(s.config), nil
 }
 
-func (s *StartedElection) OnVictory(source services.Instance) (State, error) {
-	return &NotElected{}, nil
+func (s *startedElection) OnVictory(source services.Instance) (State, error) {
+	return notElect(s.config), nil
 }
 
 // Elected.
 
-type Elected struct{}
+func elect(config Config) State {
+	return &elected{
+		config: config,
+		logger: config.Logger.Named("elected"),
+	}
+}
 
-func (s *Elected) Tick(elapsed time.Duration) (State, error) {
+type elected struct {
+	config Config
+	logger *zap.Logger
+}
+
+func (s *elected) Tick(elapsed time.Duration) (State, error) {
 	return s, nil
 }
 
-func (s *Elected) OnElection(source services.Instance) (State, error) {
-	return &StartingElection{}, nil
+func (s *elected) OnElection(source services.Instance) (State, error) {
+	return startElection(s.config), nil
 }
 
-func (s *Elected) OnAlive(source services.Instance) (State, error) {
+func (s *elected) OnAlive(source services.Instance) (State, error) {
 	return s, nil
 }
 
-func (s *Elected) OnVictory(source services.Instance) (State, error) {
-	return &NotElected{}, ErrTransition
+func (s *elected) OnVictory(source services.Instance) (State, error) {
+	return notElect(s.config), ErrTransition
 }
 
 // Waiting for election.
 
-type WaitingForElection struct {
-	elapsed time.Duration
+func waitForElection(config Config) State {
+	return &waitingForElection{
+		elapsed: config.VictoryTimeout,
+		config:  config,
+		logger:  config.Logger.Named("waiting-for-election"),
+	}
 }
 
-func (s *WaitingForElection) Tick(elapsed time.Duration) (State, error) {
+type waitingForElection struct {
+	elapsed time.Duration
+	config  Config
+	logger  *zap.Logger
+}
+
+func (s *waitingForElection) Tick(elapsed time.Duration) (State, error) {
 	s.elapsed -= elapsed
 	if s.elapsed <= 0 {
-		return &StartingElection{}, nil
+		return startElection(s.config), nil
 	}
 
 	return s, nil
 }
 
-func (s *WaitingForElection) OnElection(source services.Instance) (State, error) {
+func (s *waitingForElection) OnElection(source services.Instance) (State, error) {
 	return s, nil
 }
 
-func (s *WaitingForElection) OnAlive(source services.Instance) (State, error) {
+func (s *waitingForElection) OnAlive(source services.Instance) (State, error) {
 	return s, nil
 }
 
-func (s *WaitingForElection) OnVictory(source services.Instance) (State, error) {
-	return &NotElected{}, nil
+func (s *waitingForElection) OnVictory(source services.Instance) (State, error) {
+	return notElect(s.config), nil
 }
 
 // Not elected.
 
-type NotElected struct {
-	services services.ServiceDiscovery
+func notElect(config Config) State {
+	return &notElected{
+		config: config,
+		logger: config.Logger.Named("not-elected"),
+	}
 }
 
-func (s *NotElected) Tick(elapsed time.Duration) (State, error) {
-	ok, err := s.services.PingLeader()
+type notElected struct {
+	config Config
+	logger *zap.Logger
+}
+
+func (s *notElected) Tick(elapsed time.Duration) (State, error) {
+	ok, err := s.config.ServiceDiscovery.PingLeader()
 	if err != nil {
 		return s, err
 	}
 
 	if !ok {
-		return &StartingElection{}, nil
+		return startElection(s.config), nil
 	}
 
 	return s, nil
 }
 
-func (s *NotElected) OnElection(source services.Instance) (State, error) {
+func (s *notElected) OnElection(source services.Instance) (State, error) {
 	return s, nil
 }
 
-func (s *NotElected) OnAlive(source services.Instance) (State, error) {
+func (s *notElected) OnAlive(source services.Instance) (State, error) {
 	return s, nil
 }
 
-func (s *NotElected) OnVictory(source services.Instance) (State, error) {
+func (s *notElected) OnVictory(source services.Instance) (State, error) {
 	return s, ErrTransition
 }
