@@ -1,17 +1,13 @@
 package messages
 
 type Message struct {
-	Type string
+	Type string `json:"type"`
 }
 
-func Election() Message {
-	return Message{"election"}
-}
-
-func Alive() Message {
-	return Message{"alive"}
-}
-
-func Victory() Message {
-	return Message{"victory"}
-}
+var (
+	MessageElection = Message{"election"}
+	MessageAlive    = Message{"alive"}
+	MessageVictory  = Message{"victory"}
+	MessagePing     = Message{"ping"}
+	MessagePong     = Message{"pong"}
+)

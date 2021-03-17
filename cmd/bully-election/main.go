@@ -3,6 +3,13 @@ package main
 import (
 	"log"
 	"time"
+
+	"github.com/iskorotkov/bully-election/pkg/states"
+	_ "go.uber.org/automaxprocs"
+)
+
+const (
+	interval = time.Second
 )
 
 func main() {
@@ -12,65 +19,14 @@ func main() {
 		}
 	}()
 
-	if mustBeLeader() {
-		becomeLeader()
-	}
-
+	var state states.State = &states.Starting{}
 	for {
-		ok := pingLeader()
-		if !ok || electionFailed() {
-			if mustBeLeader() {
-				becomeLeader()
-			} else {
-				if leader := findNewLeader(); leader != nil {
-					rememberLeader(leader)
-					startElectionCountdown()
-				} else {
-					becomeLeader()
-				}
-			}
+		var err error
+		state, err = state.Tick(interval)
+		if err != nil {
+			log.Println(err)
 		}
 
-		time.Sleep(time.Second)
+		time.Sleep(interval)
 	}
-}
-
-func pingLeader() bool {
-
-}
-
-func mustBeLeader() bool {
-
-}
-
-func ownID() string {
-
-}
-
-func allIDs() []string {
-
-}
-
-func becomeLeader() {
-
-}
-
-func findNewLeader() *Instance {
-
-}
-
-func rememberLeader(leader *Instance) {
-
-}
-
-func startElectionCountdown() {
-
-}
-
-func onElectionCompleted() {
-
-}
-
-func electionFailed() bool {
-
 }
