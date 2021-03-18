@@ -28,7 +28,7 @@ type OutcomingMessage struct {
 	Content     messages.Message
 }
 
-type Client struct {
+type Server struct {
 	electionCh      chan IncomingMessage
 	aliveCh         chan IncomingMessage
 	victoryCh       chan IncomingMessage
@@ -37,67 +37,119 @@ type Client struct {
 	logger          *zap.Logger
 }
 
-func NewClient(shutdownTimeout time.Duration, logger *zap.Logger) *Client {
+func NewServer(address string, shutdownTimeout time.Duration, logger *zap.Logger) *Server {
 	electionCh := make(chan IncomingMessage)
 	aliveCh := make(chan IncomingMessage)
 	victoryCh := make(chan IncomingMessage)
 
-	server := &http.Server{Addr: ":80"}
+	server := &http.Server{
+		Addr: address,
+	}
 
-	go func() {
-		logger := logger.Named("listener")
-
-		http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-			logger := logger.Named("handler")
-			logger.Debug("incoming request", zap.Any("request", r))
-
-			b, err := ioutil.ReadAll(r.Body)
-			if err != nil {
-				msg := "couldn't read request body"
-				logger.Error(msg,
-					zap.Error(err))
-				http.Error(rw, msg, http.StatusBadRequest)
-				return
-			}
-
-			var m messages.Message
-			if err := json.Unmarshal(b, &m); err != nil {
-				msg := "couldn't unamrshal request body"
-				logger.Error(msg,
-					zap.Error(err))
-				http.Error(rw, msg, http.StatusBadRequest)
-				return
-			}
-
-			origin := r.Header.Get("Origin")
-			source := replicas.NewReplica(origin)
-
-			switch m {
-			case messages.MessageElection:
-				electionCh <- IncomingMessage{source, m}
-			case messages.MessageAlive:
-				aliveCh <- IncomingMessage{source, m}
-			case messages.MessageVictory:
-				victoryCh <- IncomingMessage{source, m}
-			default:
-				logger.Warn("unknown message type",
-					zap.Any("message", m))
-			}
-		})
-
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Warn("error in server occurred",
-				zap.Error(err))
-		}
-	}()
-
-	return &Client{
+	return &Server{
 		electionCh:      electionCh,
 		aliveCh:         aliveCh,
 		victoryCh:       victoryCh,
 		server:          server,
 		shutdownTimeout: shutdownTimeout,
 		logger:          logger,
+	}
+}
+
+func (s *Server) ListenAndServe() error {
+	logger := s.logger.Named("listener")
+
+	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+		logger := logger.Named("handler")
+		logger.Debug("incoming request", zap.Any("request", r))
+
+		b, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			msg := "couldn't read request body"
+			logger.Error(msg,
+				zap.Error(err))
+			http.Error(rw, msg, http.StatusBadRequest)
+			return
+		}
+
+		var msg messages.Message
+		if err := json.Unmarshal(b, &msg); err != nil {
+			msg := "couldn't unamrshal request body"
+			logger.Error(msg,
+				zap.Error(err))
+			http.Error(rw, msg, http.StatusBadRequest)
+			return
+		}
+
+		origin := r.Header.Get("Origin")
+		source := replicas.NewReplica(origin)
+
+		switch msg {
+		case messages.MessageElection:
+			s.electionCh <- IncomingMessage{source, msg}
+		case messages.MessageAlive:
+			s.aliveCh <- IncomingMessage{source, msg}
+		case messages.MessageVictory:
+			s.victoryCh <- IncomingMessage{source, msg}
+		case messages.MessagePing:
+			logger.Debug("server was pinged")
+		default:
+			logger.Warn("unknown message type",
+				zap.Any("message", msg))
+		}
+	})
+
+	if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Warn("error in server occurred",
+			zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+func (s *Server) OnElection() <-chan IncomingMessage {
+	s.logger.Debug("election message received")
+	return s.electionCh
+}
+
+func (s *Server) OnAlive() <-chan IncomingMessage {
+	s.logger.Debug("alive message received")
+	return s.aliveCh
+}
+
+func (s *Server) OnVictory() <-chan IncomingMessage {
+	s.logger.Debug("victory message received")
+	return s.victoryCh
+}
+
+func (s *Server) Shutdown() error {
+	logger := s.logger.Named("closed")
+	logger.Debug("client closed")
+
+	defer close(s.electionCh)
+	defer close(s.aliveCh)
+	defer close(s.victoryCh)
+
+	ctx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
+	defer cancel()
+
+	if err := s.server.Shutdown(ctx); err != nil {
+		logger.Warn("server shutdown failed",
+			zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+type Client struct {
+	logger *zap.Logger
+}
+
+func NewClient(logger *zap.Logger) *Client {
+	return &Client{
+		logger: logger,
 	}
 }
 
@@ -137,41 +189,6 @@ func (c *Client) Send(ctx context.Context, m OutcomingMessage) error {
 
 	if resp.StatusCode != http.StatusOK {
 		return ErrFailed
-	}
-
-	return nil
-}
-
-func (c *Client) OnElection() <-chan IncomingMessage {
-	c.logger.Debug("election message received")
-	return c.electionCh
-}
-
-func (c *Client) OnAlive() <-chan IncomingMessage {
-	c.logger.Debug("alive message received")
-	return c.aliveCh
-}
-
-func (c *Client) OnVictory() <-chan IncomingMessage {
-	c.logger.Debug("victory message received")
-	return c.victoryCh
-}
-
-func (c *Client) Close() error {
-	logger := c.logger.Named("closed")
-	logger.Debug("client closed")
-
-	defer close(c.electionCh)
-	defer close(c.aliveCh)
-	defer close(c.victoryCh)
-
-	ctx, cancel := context.WithTimeout(context.Background(), c.shutdownTimeout)
-	defer cancel()
-
-	if err := c.server.Shutdown(ctx); err != nil {
-		logger.Warn("server shutdown failed",
-			zap.Error(err))
-		return err
 	}
 
 	return nil

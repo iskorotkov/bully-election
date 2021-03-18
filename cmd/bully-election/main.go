@@ -39,31 +39,41 @@ func main() {
 
 	defer logger.Sync()
 
-	client := network.NewClient(time.Second*3, logger.Named("client"))
+	client := network.NewClient(logger.Named("client"))
+	sd := services.NewServiceDiscovery(time.Second*3, client, logger.Named("service-discovery"))
+	cfg := states.Config{
+		ElectionTimeout:  time.Second,
+		VictoryTimeout:   time.Second,
+		ServiceDiscovery: sd,
+		Logger:           logger.Named("states"),
+	}
+
+	state := states.Start(cfg)
+
+	server := network.NewServer(":80", time.Second*3, logger.Named("server"))
 	defer func() {
-		if err := client.Close(); err != nil {
+		if err := server.Shutdown(); err != nil {
 			logger.Warn("service discovery close failed",
 				zap.Error(err))
 		}
 	}()
 
-	sd := services.NewServiceDiscovery(time.Second*3, client, logger.Named("service-discovery"))
-	state := states.Start(states.Config{
-		ElectionTimeout:  time.Second,
-		VictoryTimeout:   time.Second,
-		ServiceDiscovery: sd,
-		Logger:           logger.Named("states"),
-	})
+	go func() {
+		if err := server.ListenAndServe(); err != nil {
+			logger.Warn("server failed",
+				zap.Error(err))
+		}
+	}()
 
 	for {
 		var err error
 
 		select {
-		case msg := <-client.OnElection():
+		case msg := <-server.OnElection():
 			state = state.OnElection(msg.Source)
-		case msg := <-client.OnAlive():
+		case msg := <-server.OnAlive():
 			state = state.OnAlive(msg.Source)
-		case msg := <-client.OnVictory():
+		case msg := <-server.OnVictory():
 			state = state.OnVictory(msg.Source)
 		default:
 			state, err = state.Tick(interval)
