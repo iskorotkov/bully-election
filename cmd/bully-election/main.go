@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"time"
 
 	"github.com/iskorotkov/bully-election/pkg/services"
@@ -21,7 +22,16 @@ func main() {
 		}
 	}()
 
-	logger, err := zap.NewProduction()
+	var (
+		logger *zap.Logger
+		err    error
+	)
+	if os.Getenv("DEVELOPMENT") != "" {
+		logger, err = zap.NewDevelopment()
+	} else {
+		logger, err = zap.NewProduction()
+	}
+
 	if err != nil {
 		log.Fatalf("couldn't create logger: %v", err)
 	}
