@@ -153,8 +153,12 @@ type elected struct {
 func (s *elected) Tick(elapsed time.Duration) (State, error) {
 	if !s.announced {
 		if err := s.config.ServiceDiscovery.AnnounceLeadership(); err != nil {
-				
+			s.logger.Warn("couldn't announce leadership",
+				zap.Error(err))
+			return s, err
 		}
+
+		s.announced = true
 	}
 
 	return s, nil
