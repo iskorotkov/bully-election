@@ -17,12 +17,6 @@ const (
 )
 
 func main() {
-	defer func() {
-		if p := recover(); p != nil {
-			log.Fatal(p)
-		}
-	}()
-
 	var (
 		logger *zap.Logger
 		err    error
@@ -39,8 +33,21 @@ func main() {
 
 	defer logger.Sync()
 
+	defer func() {
+		if p := recover(); p != nil {
+			logger.Fatal("panic occurred",
+				zap.Any("panic", p))
+		}
+	}()
+
 	client := network.NewClient(logger.Named("client"))
-	sd := services.NewServiceDiscovery(time.Second*3, client, logger.Named("service-discovery"))
+
+	sd, err := services.NewServiceDiscovery("app", time.Second*3, client, logger.Named("service-discovery"))
+	if err != nil {
+		logger.Fatal("couldn't create service dicovery",
+			zap.Error(err))
+	}
+
 	cfg := states.Config{
 		ElectionTimeout:  time.Second,
 		VictoryTimeout:   time.Second,
@@ -60,7 +67,7 @@ func main() {
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil {
-			logger.Warn("server failed",
+			logger.Warn("server stopped with error",
 				zap.Error(err))
 		}
 	}()
@@ -78,7 +85,8 @@ func main() {
 		default:
 			state, err = state.Tick(interval)
 			if err != nil {
-				log.Println(err)
+				logger.Error("error occurred during FSM tick",
+					zap.Error(err))
 			}
 
 			time.Sleep(interval)

@@ -11,6 +11,9 @@ import (
 	"github.com/iskorotkov/bully-election/pkg/network"
 	"github.com/iskorotkov/bully-election/pkg/replicas"
 	"go.uber.org/zap"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 var (
@@ -18,19 +21,37 @@ var (
 )
 
 type ServiceDiscovery struct {
+	labelKey    string
 	client      *network.Client
+	k8s         *kubernetes.Clientset
 	leader      *replicas.Replica
 	pingTimeout time.Duration
 	logger      *zap.Logger
 }
 
-func NewServiceDiscovery(pingTimeout time.Duration, client *network.Client, logger *zap.Logger) *ServiceDiscovery {
+func NewServiceDiscovery(labelKey string, pingTimeout time.Duration, client *network.Client, logger *zap.Logger) (*ServiceDiscovery, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		logger.Warn("couldn't create kubernetes config",
+			zap.Error(err))
+		return nil, err
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		logger.Warn("couldn't create kubernetes clientset",
+			zap.Error(err))
+		return nil, err
+	}
+
 	return &ServiceDiscovery{
+		labelKey:    labelKey,
 		client:      client,
+		k8s:         clientset,
 		leader:      nil,
 		pingTimeout: pingTimeout,
 		logger:      logger,
-	}
+	}, nil
 }
 
 func (s *ServiceDiscovery) Leader() *replicas.Replica {
@@ -75,7 +96,7 @@ func (s *ServiceDiscovery) MustBeLeader() (bool, error) {
 func (s *ServiceDiscovery) AnnounceLeadership() error {
 	logger := s.logger.Named("start-election")
 
-	self, err := s.self()
+	self, err := s.Self()
 	if err != nil {
 		logger.Warn("couldn't determine own identity",
 			zap.Error(err))
@@ -153,20 +174,68 @@ func (s *ServiceDiscovery) StartElection() error {
 	return nil
 }
 
-func (s *ServiceDiscovery) self() (replicas.Replica, error) {
-	host, err := os.Hostname()
-	return replicas.NewReplica(host), err
+func (s *ServiceDiscovery) Self() (replicas.Replica, error) {
+	logger := s.logger.Named("self")
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		logger.Warn("couldn't get hostname",
+			zap.Error(err))
+		return replicas.Replica{}, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
+	defer cancel()
+
+	pod, err := s.k8s.CoreV1().Pods("").Get(ctx, hostname, v1.GetOptions{})
+	if err != nil {
+		logger.Warn("couldn't get pod info",
+			zap.String("pod", hostname),
+			zap.Error(err))
+		return replicas.Replica{}, err
+	}
+
+	label, ok := pod.GetLabels()[s.labelKey]
+	if !ok {
+		logger.Warn("couldn't find required label",
+			zap.String("key", s.labelKey),
+			zap.Any("pod", pod))
+		return replicas.Replica{}, err
+	}
+
+	return replicas.NewReplica(label), err
 }
 
 func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
-	// TODO: Implement service discovery.
-	return make([]replicas.Replica, 0), nil
+	logger := s.logger.Named("others")
+
+	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
+	defer cancel()
+
+	endpoints, err := s.k8s.CoreV1().Endpoints("").List(ctx, v1.ListOptions{})
+	if err != nil {
+		logger.Warn("couldn't get list of pods",
+			zap.Error(err))
+		return nil, err
+	}
+
+	results := make([]replicas.Replica, 0)
+	for _, endpoint := range endpoints.Items {
+		if len(endpoint.Subsets[0].Addresses) == 0 {
+			continue
+		}
+
+		replica := replicas.NewReplica(endpoint.GetName())
+		results = append(results, replica)
+	}
+
+	return results, nil
 }
 
 func (s *ServiceDiscovery) potentialLeaders() ([]replicas.Replica, error) {
 	logger := s.logger.Named("potential-leaders")
 
-	self, err := s.self()
+	self, err := s.Self()
 	if err != nil {
 		logger.Warn("couldn't determine own identity",
 			zap.Error(err))
