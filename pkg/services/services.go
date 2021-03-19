@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/iskorotkov/bully-election/pkg/messages"
@@ -47,7 +48,7 @@ func (s *ServiceDiscovery) PingLeader() (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
 	defer cancel()
 
-	msg := network.OutcomingMessage{
+	msg := network.OutgoingMessage{
 		Destination: *s.leader,
 		Content:     messages.MessagePing,
 	}
@@ -90,22 +91,30 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 		return err
 	}
 
-	for _, leader := range all {
-		ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
-		defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
+	defer cancel()
 
-		msg := network.OutcomingMessage{
+	wg := sync.WaitGroup{}
+	wg.Add(len(all))
+
+	for _, leader := range all {
+		msg := network.OutgoingMessage{
 			Destination: leader,
 			Content:     messages.MessageVictory,
 		}
 
-		if err := s.client.Send(ctx, msg); err != nil {
-			logger.Warn("couldn't send victory message",
-				zap.Any("target", leader),
-				zap.Error(err))
-			return err
-		}
+		go func() {
+			defer wg.Done()
+
+			if err := s.client.Send(ctx, msg); err != nil {
+				logger.Warn("couldn't send victory message",
+					zap.Any("message", msg),
+					zap.Error(err))
+			}
+		}()
 	}
+
+	wg.Wait()
 
 	return nil
 }
@@ -120,21 +129,25 @@ func (s *ServiceDiscovery) StartElection() error {
 		return err
 	}
 
-	for _, leader := range potentialLeaders {
-		ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
-		defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
+	defer cancel()
 
-		msg := network.OutcomingMessage{
+	wg := sync.WaitGroup{}
+	wg.Add(len(potentialLeaders))
+
+	for _, leader := range potentialLeaders {
+		msg := network.OutgoingMessage{
 			Destination: leader,
 			Content:     messages.MessageElection,
 		}
 
-		if err := s.client.Send(ctx, msg); err != nil {
-			logger.Warn("couldn't send election message",
-				zap.Any("target", leader),
-				zap.Error(err))
-			return err
-		}
+		go func() {
+			if err := s.client.Send(ctx, msg); err != nil {
+				logger.Warn("couldn't send election message",
+					zap.Any("message", msg),
+					zap.Error(err))
+			}
+		}()
 	}
 
 	return nil

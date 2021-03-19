@@ -23,7 +23,7 @@ type IncomingMessage struct {
 	Content messages.Message
 }
 
-type OutcomingMessage struct {
+type OutgoingMessage struct {
 	Destination replicas.Replica
 	Content     messages.Message
 }
@@ -153,7 +153,7 @@ func NewClient(logger *zap.Logger) *Client {
 	}
 }
 
-func (c *Client) Send(ctx context.Context, m OutcomingMessage) error {
+func (c *Client) Send(ctx context.Context, m OutgoingMessage) error {
 	logger := c.logger.Named("send")
 
 	b, err := json.Marshal(m.Content)
