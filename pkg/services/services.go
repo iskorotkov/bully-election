@@ -169,6 +169,8 @@ func (s *ServiceDiscovery) StartElection() error {
 		}
 
 		go func() {
+			defer wg.Done()
+
 			if err := s.client.Send(ctx, msg); err != nil {
 				logger.Warn("couldn't send election message",
 					zap.Any("message", msg),
@@ -176,6 +178,8 @@ func (s *ServiceDiscovery) StartElection() error {
 			}
 		}()
 	}
+
+	wg.Wait()
 
 	return nil
 }
