@@ -39,7 +39,7 @@ func NewFSM(config Config) *FSM {
 		zap.Any("config", config))
 
 	return &FSM{
-		state:  start(config),
+		state:  startElection(config),
 		mu:     &sync.RWMutex{},
 		logger: config.Logger,
 	}
@@ -97,39 +97,6 @@ func (f *FSM) State() State {
 	defer f.mu.RUnlock()
 
 	return f.state
-}
-
-// Starting.
-
-func start(config Config) State {
-	logger := config.Logger.Named("starting")
-	logger.Info("enter starting state")
-	return &starting{
-		config: config,
-		logger: logger,
-	}
-}
-
-type starting struct {
-	config Config
-	logger *zap.Logger
-}
-
-func (s *starting) Tick(elapsed time.Duration) (State, error) {
-	return startElection(s.config), nil
-}
-
-func (s *starting) OnElection(source replicas.Replica) State {
-	return s
-}
-
-func (s *starting) OnAlive(source replicas.Replica) State {
-	return s
-}
-
-func (s *starting) OnVictory(source replicas.Replica) State {
-	s.config.ServiceDiscovery.RememberLeader(source)
-	return notElect(s.config)
 }
 
 // Starting election.
