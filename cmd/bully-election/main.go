@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
-	"github.com/iskorotkov/bully-election/pkg/network"
+	"github.com/iskorotkov/bully-election/pkg/comms"
+	"github.com/iskorotkov/bully-election/pkg/metrics"
 	"github.com/iskorotkov/bully-election/pkg/services"
 	"github.com/iskorotkov/bully-election/pkg/states"
 	_ "go.uber.org/automaxprocs"
@@ -45,7 +48,7 @@ func main() {
 		logger.Fatal("kubernetes namespace wasn't set")
 	}
 
-	client := network.NewClient(logger.Named("client"))
+	client := comms.NewClient(logger.Named("client"))
 
 	sd, err := services.NewServiceDiscovery("app", namespace, time.Second*3,
 		client, logger.Named("service-discovery"))
@@ -58,33 +61,47 @@ func main() {
 		ElectionTimeout:  time.Second,
 		VictoryTimeout:   time.Second,
 		ServiceDiscovery: sd,
-		Logger:           logger.Named("states"),
+		Logger:           logger.Named("fsm"),
 	}
 
 	fsm := states.NewFSM(cfg)
 
-	server := network.NewServer(":80", time.Second*3, logger.Named("server"))
-	defer func() {
-		if err := server.Shutdown(); err != nil {
-			logger.Warn("service discovery close failed",
+	commServer := comms.NewServer(logger.Named("comm-server"))
+	defer commServer.Close()
+	http.HandleFunc("/", commServer.Handle)
+
+	metricsServer := metrics.NewServer(fsm, sd, logger.Named("metrics-server"))
+	http.HandleFunc("/metrics", metricsServer.Handle)
+
+	server := &http.Server{
+		Addr: ":80",
+	}
+
+	go func() {
+		err := server.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			logger.Fatal("error in server occurred",
 				zap.Error(err))
 		}
 	}()
 
-	go func() {
-		if err := server.ListenAndServe(); err != nil {
-			logger.Warn("server stopped with error",
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+		defer cancel()
+
+		if err := server.Shutdown(ctx); err != nil {
+			logger.Fatal("server shutdown failed",
 				zap.Error(err))
 		}
 	}()
 
 	for {
 		select {
-		case msg := <-server.OnElection():
+		case msg := <-commServer.OnElection():
 			fsm.OnElection(msg.Source)
-		case msg := <-server.OnAlive():
+		case msg := <-commServer.OnAlive():
 			fsm.OnAlive(msg.Source)
-		case msg := <-server.OnVictory():
+		case msg := <-commServer.OnVictory():
 			fsm.OnVictory(msg.Source)
 		default:
 			err := fsm.Tick(interval)

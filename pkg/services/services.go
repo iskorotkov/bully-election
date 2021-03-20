@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/iskorotkov/bully-election/pkg/comms"
 	"github.com/iskorotkov/bully-election/pkg/messages"
-	"github.com/iskorotkov/bully-election/pkg/network"
 	"github.com/iskorotkov/bully-election/pkg/replicas"
 	"go.uber.org/zap"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,7 +23,7 @@ var (
 type ServiceDiscovery struct {
 	labelKey    string
 	namespace   string
-	client      *network.Client
+	client      *comms.Client
 	k8s         *kubernetes.Clientset
 	self        replicas.Replica
 	leader      replicas.Replica
@@ -32,7 +32,7 @@ type ServiceDiscovery struct {
 }
 
 func NewServiceDiscovery(labelKey string, namespace string, pingTimeout time.Duration,
-	client *network.Client, logger *zap.Logger) (*ServiceDiscovery, error) {
+	client *comms.Client, logger *zap.Logger) (*ServiceDiscovery, error) {
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -82,7 +82,7 @@ func (s *ServiceDiscovery) PingLeader() (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
 	defer cancel()
 
-	msg := network.OutgoingMessage{
+	msg := comms.OutgoingMessage{
 		Destination: s.leader,
 		Content:     messages.MessagePing,
 	}
@@ -125,7 +125,7 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 	wg.Add(len(all))
 
 	for _, leader := range all {
-		msg := network.OutgoingMessage{
+		msg := comms.OutgoingMessage{
 			Destination: leader,
 			Content:     messages.MessageVictory,
 		}
@@ -163,7 +163,7 @@ func (s *ServiceDiscovery) StartElection() error {
 	wg.Add(len(potentialLeaders))
 
 	for _, leader := range potentialLeaders {
-		msg := network.OutgoingMessage{
+		msg := comms.OutgoingMessage{
 			Destination: leader,
 			Content:     messages.MessageElection,
 		}

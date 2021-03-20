@@ -38,7 +38,7 @@ func NewFSM(config Config) *FSM {
 	return &FSM{
 		state:  start(config),
 		mu:     &sync.RWMutex{},
-		logger: config.Logger.Named("fsm"),
+		logger: config.Logger,
 	}
 }
 

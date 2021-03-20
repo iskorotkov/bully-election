@@ -17,11 +17,11 @@ type MetricsServer struct {
 	logger *zap.Logger
 }
 
-func NewMetricsServer(fsm *states.FSM, sd *services.ServiceDiscovery, logger *zap.Logger) *MetricsServer {
+func NewServer(fsm *states.FSM, sd *services.ServiceDiscovery, logger *zap.Logger) *MetricsServer {
 	return &MetricsServer{
 		fsm:    fsm,
 		sd:     sd,
-		logger: logger.Named("metrics-server"),
+		logger: logger,
 	}
 }
 
