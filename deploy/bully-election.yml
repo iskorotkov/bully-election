@@ -15,7 +15,7 @@ spec:
       serviceAccountName: bully-election
       containers:
         - name: bully-election
-          image: iskorotkov/bully-election:v0.1.0-alpha.8
+          image: iskorotkov/bully-election:v0.1.0-alpha.10
           resources:
             limits:
               memory: "64Mi"
@@ -44,7 +44,7 @@ metadata:
   labels:
     app: bully-election
 rules:
-  - verbs: ["list"]
+  - verbs: ["list", "get"]
     apiGroups: [""]
     resources: ["pods"]
 ---
