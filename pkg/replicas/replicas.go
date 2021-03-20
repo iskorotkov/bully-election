@@ -1,5 +1,9 @@
 package replicas
 
+var (
+	ReplicaNone = Replica{}
+)
+
 type Replica struct {
 	Name string
 }
