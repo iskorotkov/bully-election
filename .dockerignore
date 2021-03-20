@@ -1,0 +1,11 @@
+.vs
+.vscode
+.idea
+.git
+
+build
+deploy
+
+.gitignore
+README.md
+Makefile
