@@ -50,8 +50,7 @@ func main() {
 
 	client := comms.NewClient(logger.Named("client"))
 
-	sd, err := services.NewServiceDiscovery("app", namespace, time.Second*3,
-		client, logger.Named("service-discovery"))
+	sd, err := services.NewServiceDiscovery(namespace, time.Second*5, client, logger.Named("service-discovery"))
 	if err != nil {
 		logger.Fatal("couldn't create service dicovery",
 			zap.Error(err))

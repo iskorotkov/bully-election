@@ -21,7 +21,6 @@ var (
 )
 
 type ServiceDiscovery struct {
-	labelKey    string
 	namespace   string
 	client      *comms.Client
 	k8s         *kubernetes.Clientset
@@ -31,32 +30,31 @@ type ServiceDiscovery struct {
 	logger      *zap.Logger
 }
 
-func NewServiceDiscovery(labelKey string, namespace string, pingTimeout time.Duration,
+func NewServiceDiscovery(namespace string, pingTimeout time.Duration,
 	client *comms.Client, logger *zap.Logger) (*ServiceDiscovery, error) {
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		logger.Warn("couldn't get hostname",
+		logger.Error("couldn't get hostname",
 			zap.Error(err))
 		return nil, err
 	}
 
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		logger.Warn("couldn't create kubernetes config",
+		logger.Error("couldn't create kubernetes config",
 			zap.Error(err))
 		return nil, err
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		logger.Warn("couldn't create kubernetes clientset",
+		logger.Error("couldn't create kubernetes clientset",
 			zap.Error(err))
 		return nil, err
 	}
 
 	return &ServiceDiscovery{
-		labelKey:    labelKey,
 		namespace:   namespace,
 		client:      client,
 		k8s:         clientset,
@@ -76,7 +74,7 @@ func (s *ServiceDiscovery) PingLeader() (bool, error) {
 	logger.Info("leader ping initiated")
 
 	if s.leader == replicas.ReplicaNone {
-		logger.Warn("leader is nil")
+		logger.Error("leader is nil")
 		return false, ErrNoLeader
 	}
 
@@ -89,7 +87,7 @@ func (s *ServiceDiscovery) PingLeader() (bool, error) {
 	}
 
 	if err := s.client.Send(ctx, msg); err != nil {
-		logger.Warn("couldn't send message", zap.Any("message", msg))
+		logger.Error("couldn't send message", zap.Any("message", msg))
 		return false, err
 	}
 
@@ -97,11 +95,11 @@ func (s *ServiceDiscovery) PingLeader() (bool, error) {
 }
 
 func (s *ServiceDiscovery) MustBeLeader() (bool, error) {
-	s.logger.Info("check is must become a leader")
+	s.logger.Info("check if must become a leader")
 
 	potentialLeaders, err := s.potentialLeaders()
 	if err != nil {
-		s.logger.Warn("couldn't find potential leaders",
+		s.logger.Error("couldn't find potential leaders",
 			zap.Error(err))
 		return false, err
 	}
@@ -117,7 +115,7 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 
 	all, err := s.others()
 	if err != nil {
-		logger.Warn("couldn't fetch other replicas",
+		logger.Error("couldn't fetch other replicas",
 			zap.Error(err))
 		return err
 	}
@@ -138,7 +136,7 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 			defer wg.Done()
 
 			if err := s.client.Send(ctx, msg); err != nil {
-				logger.Warn("couldn't send victory message",
+				logger.Error("couldn't send victory message",
 					zap.Any("message", msg),
 					zap.Error(err))
 			}
@@ -157,7 +155,7 @@ func (s *ServiceDiscovery) StartElection() error {
 
 	potentialLeaders, err := s.potentialLeaders()
 	if err != nil {
-		logger.Warn("couldn't fetch potential leaders",
+		logger.Error("couldn't fetch potential leaders",
 			zap.Error(err))
 		return err
 	}
@@ -178,7 +176,7 @@ func (s *ServiceDiscovery) StartElection() error {
 			defer wg.Done()
 
 			if err := s.client.Send(ctx, msg); err != nil {
-				logger.Warn("couldn't send election message",
+				logger.Error("couldn't send election message",
 					zap.Any("message", msg),
 					zap.Error(err))
 			}
@@ -204,7 +202,7 @@ func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
 
 	pods, err := s.k8s.CoreV1().Pods(s.namespace).List(ctx, v1.ListOptions{})
 	if err != nil {
-		logger.Warn("couldn't get list of pods",
+		logger.Error("couldn't get list of pods",
 			zap.Error(err))
 		return nil, err
 	}
@@ -231,7 +229,7 @@ func (s *ServiceDiscovery) potentialLeaders() ([]replicas.Replica, error) {
 
 	others, err := s.others()
 	if err != nil {
-		logger.Warn("couldn't get others",
+		logger.Error("couldn't get others",
 			zap.Error(err))
 		return nil, err
 	}

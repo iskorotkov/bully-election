@@ -83,23 +83,20 @@ func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 	case messages.MessagePing:
 		logger.Debug("server was pinged")
 	default:
-		logger.Warn("unknown message type",
+		logger.Error("unknown message type",
 			zap.Any("message", msg))
 	}
 }
 
 func (s *Server) OnElection() <-chan IncomingMessage {
-	s.logger.Debug("election message received")
 	return s.electionCh
 }
 
 func (s *Server) OnAlive() <-chan IncomingMessage {
-	s.logger.Debug("alive message received")
 	return s.aliveCh
 }
 
 func (s *Server) OnVictory() <-chan IncomingMessage {
-	s.logger.Debug("victory message received")
 	return s.victoryCh
 }
 
@@ -122,12 +119,12 @@ func NewClient(logger *zap.Logger) *Client {
 
 func (c *Client) Send(ctx context.Context, m OutgoingMessage) error {
 	logger := c.logger.Named("send")
-	logger.Debug("message being sent",
+	logger.Debug("starting sending message",
 		zap.Any("message", m))
 
 	b, err := json.Marshal(m.Content)
 	if err != nil {
-		logger.Warn("couldn't marshal message content",
+		logger.Error("couldn't marshal message content",
 			zap.Any("message", m),
 			zap.Error(err))
 		return err
@@ -135,9 +132,13 @@ func (c *Client) Send(ctx context.Context, m OutgoingMessage) error {
 
 	url := fmt.Sprintf("http://%s", m.Destination.Name)
 
+	logger.Debug("sending message to url",
+		zap.Any("message", m),
+		zap.String("url", url))
+
 	req, err := http.NewRequestWithContext(ctx, "post", url, bytes.NewReader(b))
 	if err != nil {
-		logger.Warn("couldn't create request",
+		logger.Error("couldn't create request",
 			zap.Any("message", m),
 			zap.Any("destination", m.Destination),
 			zap.Error(err))
@@ -146,20 +147,21 @@ func (c *Client) Send(ctx context.Context, m OutgoingMessage) error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		logger.Warn("couldn't execute request",
+		logger.Error("couldn't execute request",
 			zap.Any("request", req),
+			zap.Any("context", ctx),
 			zap.Error(err))
 		return err
 	}
 
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			logger.Warn("response body couldn't be closed", zap.Any("resp", resp), zap.Error(err))
+			logger.Error("response body couldn't be closed", zap.Any("resp", resp), zap.Error(err))
 		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		logger.Warn("message send failed with invalid response status code",
+		logger.Error("message send failed with invalid response status code",
 			zap.Int("code", resp.StatusCode))
 		return ErrFailed
 	}
