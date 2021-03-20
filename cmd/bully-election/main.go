@@ -61,7 +61,7 @@ func main() {
 		Logger:           logger.Named("states"),
 	}
 
-	state := states.Start(cfg)
+	fsm := states.NewFSM(cfg)
 
 	server := network.NewServer(":80", time.Second*3, logger.Named("server"))
 	defer func() {
@@ -79,17 +79,15 @@ func main() {
 	}()
 
 	for {
-		var err error
-
 		select {
 		case msg := <-server.OnElection():
-			state = state.OnElection(msg.Source)
+			fsm.OnElection(msg.Source)
 		case msg := <-server.OnAlive():
-			state = state.OnAlive(msg.Source)
+			fsm.OnAlive(msg.Source)
 		case msg := <-server.OnVictory():
-			state = state.OnVictory(msg.Source)
+			fsm.OnVictory(msg.Source)
 		default:
-			state, err = state.Tick(interval)
+			err := fsm.Tick(interval)
 			if err != nil {
 				logger.Error("error occurred during FSM tick",
 					zap.Error(err))
