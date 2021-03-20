@@ -30,9 +30,8 @@ type ServiceDiscovery struct {
 	logger      *zap.Logger
 }
 
-func NewServiceDiscovery(namespace string, pingTimeout time.Duration,
+func NewServiceDiscovery(ns string, timeout time.Duration,
 	client *comms.Client, logger *zap.Logger) (*ServiceDiscovery, error) {
-
 	hostname, err := os.Hostname()
 	if err != nil {
 		logger.Error("couldn't get hostname",
@@ -54,13 +53,26 @@ func NewServiceDiscovery(namespace string, pingTimeout time.Duration,
 		return nil, err
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	podInfo, err := clientset.CoreV1().Pods(ns).Get(ctx, hostname, v1.GetOptions{})
+	if err != nil {
+		logger.Error("couldn't get pod info",
+			zap.String("hostname", hostname),
+			zap.Error(err))
+		return nil, err
+	}
+
+	self := replicas.NewReplica(podInfo.GetName(), podInfo.Status.PodIP)
+
 	return &ServiceDiscovery{
-		namespace:   namespace,
+		namespace:   ns,
 		client:      client,
 		k8s:         clientset,
 		leader:      replicas.ReplicaNone,
-		self:        replicas.NewReplica(hostname),
-		pingTimeout: pingTimeout,
+		self:        self,
+		pingTimeout: timeout,
 		logger:      logger,
 	}, nil
 }
@@ -81,10 +93,7 @@ func (s *ServiceDiscovery) PingLeader() (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
 	defer cancel()
 
-	msg := comms.OutgoingMessage{
-		Destination: s.leader,
-		Content:     messages.MessagePing,
-	}
+	msg := comms.NewOutgoingMessage(s.self, s.leader, messages.MessagePing)
 
 	if err := s.client.Send(ctx, msg); err != nil {
 		logger.Error("couldn't send message", zap.Any("message", msg))
@@ -113,7 +122,7 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 
 	s.leader = s.Self()
 
-	all, err := s.others()
+	others, err := s.others()
 	if err != nil {
 		logger.Error("couldn't fetch other replicas",
 			zap.Error(err))
@@ -124,13 +133,10 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 	defer cancel()
 
 	wg := sync.WaitGroup{}
-	wg.Add(len(all))
+	wg.Add(len(others))
 
-	for _, leader := range all {
-		msg := comms.OutgoingMessage{
-			Destination: leader,
-			Content:     messages.MessageVictory,
-		}
+	for _, pod := range others {
+		msg := comms.NewOutgoingMessage(s.self, pod, messages.MessageVictory)
 
 		go func() {
 			defer wg.Done()
@@ -166,11 +172,8 @@ func (s *ServiceDiscovery) StartElection() error {
 	wg := sync.WaitGroup{}
 	wg.Add(len(potentialLeaders))
 
-	for _, leader := range potentialLeaders {
-		msg := comms.OutgoingMessage{
-			Destination: leader,
-			Content:     messages.MessageElection,
-		}
+	for _, pl := range potentialLeaders {
+		msg := comms.NewOutgoingMessage(s.self, pl, messages.MessageElection)
 
 		go func() {
 			defer wg.Done()
@@ -213,7 +216,7 @@ func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
 			continue
 		}
 
-		replica := replicas.NewReplica(pod.GetName())
+		replica := replicas.NewReplica(pod.GetName(), pod.Status.PodIP)
 		results = append(results, replica)
 	}
 

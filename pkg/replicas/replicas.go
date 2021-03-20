@@ -5,11 +5,13 @@ var (
 )
 
 type Replica struct {
-	Name string
+	Name string `json:"name"`
+	IP   string `json:"ip"`
 }
 
-func NewReplica(name string) Replica {
+func NewReplica(name string, ip string) Replica {
 	return Replica{
 		Name: name,
+		IP:   ip,
 	}
 }

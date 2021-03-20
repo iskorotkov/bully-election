@@ -97,11 +97,11 @@ func main() {
 	for {
 		select {
 		case msg := <-commServer.OnElection():
-			fsm.OnElection(msg.Source)
+			fsm.OnElection(msg.From)
 		case msg := <-commServer.OnAlive():
-			fsm.OnAlive(msg.Source)
+			fsm.OnAlive(msg.From)
 		case msg := <-commServer.OnVictory():
-			fsm.OnVictory(msg.Source)
+			fsm.OnVictory(msg.From)
 		default:
 			err := fsm.Tick(interval)
 			if err != nil {

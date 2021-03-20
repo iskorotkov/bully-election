@@ -19,13 +19,22 @@ var (
 )
 
 type IncomingMessage struct {
-	Source  replicas.Replica
-	Content messages.Message
+	From    replicas.Replica `json:"from"`
+	Message messages.Message `json:"message"`
 }
 
 type OutgoingMessage struct {
-	Destination replicas.Replica
-	Content     messages.Message
+	From    replicas.Replica
+	To      replicas.Replica
+	Message messages.Message
+}
+
+func NewOutgoingMessage(from replicas.Replica, to replicas.Replica, msg messages.Message) OutgoingMessage {
+	return OutgoingMessage{
+		From:    from,
+		To:      to,
+		Message: msg,
+	}
 }
 
 type Server struct {
@@ -61,7 +70,7 @@ func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var msg messages.Message
+	var msg IncomingMessage
 	if err := json.Unmarshal(b, &msg); err != nil {
 		msg := "couldn't unamrshal request body"
 		logger.Error(msg,
@@ -70,16 +79,13 @@ func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	origin := r.Header.Get("Origin")
-	source := replicas.NewReplica(origin)
-
-	switch msg {
+	switch msg.Message {
 	case messages.MessageElection:
-		s.electionCh <- IncomingMessage{source, msg}
+		s.electionCh <- msg
 	case messages.MessageAlive:
-		s.aliveCh <- IncomingMessage{source, msg}
+		s.aliveCh <- msg
 	case messages.MessageVictory:
-		s.victoryCh <- IncomingMessage{source, msg}
+		s.victoryCh <- msg
 	case messages.MessagePing:
 		logger.Debug("server was pinged")
 	default:
@@ -117,30 +123,34 @@ func NewClient(logger *zap.Logger) *Client {
 	}
 }
 
-func (c *Client) Send(ctx context.Context, m OutgoingMessage) error {
+func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage) error {
 	logger := c.logger.Named("send")
 	logger.Debug("starting sending message",
-		zap.Any("message", m))
+		zap.Any("message", outgoing))
 
-	b, err := json.Marshal(m.Content)
+	message := IncomingMessage{
+		From:    outgoing.From,
+		Message: outgoing.Message,
+	}
+
+	b, err := json.Marshal(message)
 	if err != nil {
 		logger.Error("couldn't marshal message content",
-			zap.Any("message", m),
+			zap.Any("message", outgoing),
 			zap.Error(err))
 		return err
 	}
 
-	url := fmt.Sprintf("http://%s", m.Destination.Name)
+	url := fmt.Sprintf("http://%s", outgoing.To.IP)
 
 	logger.Debug("sending message to url",
-		zap.Any("message", m),
+		zap.Any("message", outgoing),
 		zap.String("url", url))
 
 	req, err := http.NewRequestWithContext(ctx, "post", url, bytes.NewReader(b))
 	if err != nil {
 		logger.Error("couldn't create request",
-			zap.Any("message", m),
-			zap.Any("destination", m.Destination),
+			zap.Any("message", outgoing),
 			zap.Error(err))
 		return err
 	}
