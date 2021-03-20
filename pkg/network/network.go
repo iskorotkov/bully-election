@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -164,7 +165,9 @@ func (c *Client) Send(ctx context.Context, m OutgoingMessage) error {
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "post", m.Destination.Name, bytes.NewReader(b))
+	url := fmt.Sprintf("http://%s", m.Destination.Name)
+
+	req, err := http.NewRequestWithContext(ctx, "post", url, bytes.NewReader(b))
 	if err != nil {
 		logger.Warn("couldn't create request",
 			zap.Any("message", m),
