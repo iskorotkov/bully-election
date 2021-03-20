@@ -128,6 +128,7 @@ func (s *starting) OnAlive(source replicas.Replica) State {
 }
 
 func (s *starting) OnVictory(source replicas.Replica) State {
+	s.config.ServiceDiscovery.RememberLeader(source)
 	return notElect(s.config)
 }
 
@@ -170,6 +171,7 @@ func (s *startingElection) OnAlive(source replicas.Replica) State {
 }
 
 func (s *startingElection) OnVictory(source replicas.Replica) State {
+	s.config.ServiceDiscovery.RememberLeader(source)
 	return notElect(s.config)
 }
 
@@ -209,6 +211,7 @@ func (s *startedElection) OnAlive(source replicas.Replica) State {
 }
 
 func (s *startedElection) OnVictory(source replicas.Replica) State {
+	s.config.ServiceDiscovery.RememberLeader(source)
 	return notElect(s.config)
 }
 
@@ -253,6 +256,7 @@ func (s *elected) OnAlive(source replicas.Replica) State {
 }
 
 func (s *elected) OnVictory(source replicas.Replica) State {
+	s.config.ServiceDiscovery.RememberLeader(source)
 	return notElect(s.config)
 }
 
@@ -292,6 +296,7 @@ func (s *waitingForElection) OnAlive(source replicas.Replica) State {
 }
 
 func (s *waitingForElection) OnVictory(source replicas.Replica) State {
+	s.config.ServiceDiscovery.RememberLeader(source)
 	return notElect(s.config)
 }
 
@@ -333,5 +338,6 @@ func (s *notElected) OnAlive(source replicas.Replica) State {
 }
 
 func (s *notElected) OnVictory(source replicas.Replica) State {
+	s.config.ServiceDiscovery.RememberLeader(source)
 	return s
 }

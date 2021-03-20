@@ -77,6 +77,10 @@ func NewServiceDiscovery(ns string, timeout time.Duration,
 	}, nil
 }
 
+func (s *ServiceDiscovery) RememberLeader(leader replicas.Replica) {
+	s.leader = leader
+}
+
 func (s *ServiceDiscovery) Leader() replicas.Replica {
 	return s.leader
 }
