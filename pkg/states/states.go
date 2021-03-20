@@ -35,6 +35,9 @@ type FSM struct {
 }
 
 func NewFSM(config Config) *FSM {
+	config.Logger.Info("start new fsm",
+		zap.Any("config", config))
+
 	return &FSM{
 		state:  start(config),
 		mu:     &sync.RWMutex{},
@@ -43,6 +46,9 @@ func NewFSM(config Config) *FSM {
 }
 
 func (f *FSM) Tick(elapsed time.Duration) error {
+	f.logger.Debug("tick called",
+		zap.Duration("elapsed", elapsed))
+
 	state, err := f.state.Tick(elapsed)
 	if err != nil {
 		f.logger.Error("error occurred during FSM tick",
@@ -57,6 +63,9 @@ func (f *FSM) Tick(elapsed time.Duration) error {
 }
 
 func (f *FSM) OnElection(source replicas.Replica) {
+	f.logger.Debug("on election called",
+		zap.Any("source", source))
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -64,6 +73,9 @@ func (f *FSM) OnElection(source replicas.Replica) {
 }
 
 func (f *FSM) OnAlive(source replicas.Replica) {
+	f.logger.Debug("on alive called",
+		zap.Any("source", source))
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -71,6 +83,9 @@ func (f *FSM) OnAlive(source replicas.Replica) {
 }
 
 func (f *FSM) OnVictory(source replicas.Replica) {
+	f.logger.Debug("on victory called",
+		zap.Any("source", source))
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -87,9 +102,11 @@ func (f *FSM) State() State {
 // Starting.
 
 func start(config Config) State {
+	logger := config.Logger.Named("starting")
+	logger.Info("enter starting state")
 	return &starting{
 		config: config,
-		logger: config.Logger.Named("starting"),
+		logger: logger,
 	}
 }
 
@@ -117,9 +134,11 @@ func (s *starting) OnVictory(source replicas.Replica) State {
 // Starting election.
 
 func startElection(config Config) State {
+	logger := config.Logger.Named("starting-election")
+	logger.Info("enter start election state")
 	return &startingElection{
 		config: config,
-		logger: config.Logger.Named("starting-election"),
+		logger: logger,
 	}
 }
 
@@ -157,10 +176,12 @@ func (s *startingElection) OnVictory(source replicas.Replica) State {
 // Started election.
 
 func onElectionStarted(config Config) State {
+	logger := config.Logger.Named("started-election")
+	logger.Info("enter election started state")
 	return &startedElection{
 		elapsed: config.ElectionTimeout,
 		config:  config,
-		logger:  config.Logger.Named("started-election"),
+		logger:  logger,
 	}
 }
 
@@ -194,10 +215,12 @@ func (s *startedElection) OnVictory(source replicas.Replica) State {
 // Elected.
 
 func elect(config Config) State {
+	logger := config.Logger.Named("elected")
+	logger.Info("enter elected state")
 	return &elected{
 		announced: false,
 		config:    config,
-		logger:    config.Logger.Named("elected"),
+		logger:    logger,
 	}
 }
 
@@ -236,10 +259,12 @@ func (s *elected) OnVictory(source replicas.Replica) State {
 // Waiting for election.
 
 func waitForElection(config Config) State {
+	logger := config.Logger.Named("waiting-for-election")
+	logger.Info("enter waiting for election state")
 	return &waitingForElection{
 		elapsed: config.VictoryTimeout,
 		config:  config,
-		logger:  config.Logger.Named("waiting-for-election"),
+		logger:  logger,
 	}
 }
 
@@ -273,9 +298,11 @@ func (s *waitingForElection) OnVictory(source replicas.Replica) State {
 // Not elected.
 
 func notElect(config Config) State {
+	logger := config.Logger.Named("not-elected")
+	logger.Info("enter not elected state")
 	return &notElected{
 		config: config,
-		logger: config.Logger.Named("not-elected"),
+		logger: logger,
 	}
 }
 

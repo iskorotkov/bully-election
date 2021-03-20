@@ -73,6 +73,7 @@ func (s *ServiceDiscovery) Leader() replicas.Replica {
 
 func (s *ServiceDiscovery) PingLeader() (bool, error) {
 	logger := s.logger.Named("ping-leader")
+	logger.Info("leader ping initiated")
 
 	if s.leader == replicas.ReplicaNone {
 		logger.Warn("leader is nil")
@@ -96,6 +97,8 @@ func (s *ServiceDiscovery) PingLeader() (bool, error) {
 }
 
 func (s *ServiceDiscovery) MustBeLeader() (bool, error) {
+	s.logger.Info("check is must become a leader")
+
 	potentialLeaders, err := s.potentialLeaders()
 	if err != nil {
 		s.logger.Warn("couldn't find potential leaders",
@@ -108,6 +111,7 @@ func (s *ServiceDiscovery) MustBeLeader() (bool, error) {
 
 func (s *ServiceDiscovery) AnnounceLeadership() error {
 	logger := s.logger.Named("start-election")
+	logger.Info("announce leadership")
 
 	s.leader = s.Self()
 
@@ -142,12 +146,14 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 	}
 
 	wg.Wait()
+	logger.Info("leadership announced")
 
 	return nil
 }
 
 func (s *ServiceDiscovery) StartElection() error {
 	logger := s.logger.Named("start-election")
+	logger.Info("election started")
 
 	potentialLeaders, err := s.potentialLeaders()
 	if err != nil {
@@ -180,6 +186,7 @@ func (s *ServiceDiscovery) StartElection() error {
 	}
 
 	wg.Wait()
+	logger.Info("election finished")
 
 	return nil
 }
@@ -190,6 +197,7 @@ func (s *ServiceDiscovery) Self() replicas.Replica {
 
 func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
 	logger := s.logger.Named("others")
+	logger.Debug("looking for others")
 
 	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
 	defer cancel()
@@ -211,11 +219,15 @@ func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
 		results = append(results, replica)
 	}
 
+	logger.Debug("others found",
+		zap.Any("others", results))
+
 	return results, nil
 }
 
 func (s *ServiceDiscovery) potentialLeaders() ([]replicas.Replica, error) {
 	logger := s.logger.Named("potential-leaders")
+	logger.Debug("looking for potential leaders")
 
 	others, err := s.others()
 	if err != nil {
@@ -230,6 +242,9 @@ func (s *ServiceDiscovery) potentialLeaders() ([]replicas.Replica, error) {
 			potentialLeaders = append(potentialLeaders, other)
 		}
 	}
+
+	logger.Debug("potential leaders found",
+		zap.Any("leaders", potentialLeaders))
 
 	return potentialLeaders, nil
 }

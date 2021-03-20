@@ -104,9 +104,10 @@ func (s *Server) OnVictory() <-chan IncomingMessage {
 }
 
 func (s *Server) Close() {
-	defer close(s.electionCh)
-	defer close(s.aliveCh)
-	defer close(s.victoryCh)
+	s.logger.Debug("comm server closed")
+	close(s.electionCh)
+	close(s.aliveCh)
+	close(s.victoryCh)
 }
 
 type Client struct {
@@ -121,6 +122,8 @@ func NewClient(logger *zap.Logger) *Client {
 
 func (c *Client) Send(ctx context.Context, m OutgoingMessage) error {
 	logger := c.logger.Named("send")
+	logger.Debug("message being sent",
+		zap.Any("message", m))
 
 	b, err := json.Marshal(m.Content)
 	if err != nil {
@@ -156,6 +159,8 @@ func (c *Client) Send(ctx context.Context, m OutgoingMessage) error {
 	}()
 
 	if resp.StatusCode != http.StatusOK {
+		logger.Warn("message send failed with invalid response status code",
+			zap.Int("code", resp.StatusCode))
 		return ErrFailed
 	}
 
