@@ -47,5 +47,5 @@ func (m *MetricsServer) Handle(rw http.ResponseWriter, r *http.Request) {
 		http.Error(rw, msg, http.StatusInternalServerError)
 	}
 
-	fmt.Fprint(rw, b)
+	fmt.Fprint(rw, string(b))
 }
