@@ -1,5 +1,5 @@
 image = iskorotkov/bully-election
-version = v0.1.0-alpha.10
+version = v0.1.0-alpha.11
 namespace = chaos-app
 
 .PHONY: ci
