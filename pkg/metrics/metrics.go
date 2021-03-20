@@ -28,6 +28,9 @@ func NewServer(fsm *states.FSM, sd *services.ServiceDiscovery, logger *zap.Logge
 func (m *MetricsServer) Handle(rw http.ResponseWriter, r *http.Request) {
 	logger := m.logger.Named("handle")
 
+	state := m.fsm.State()
+	stateName := reflect.TypeOf(state).Elem().Name()
+
 	resp := struct {
 		Name       string `json:"name"`
 		LeaderName string `json:"leaderName"`
@@ -35,7 +38,7 @@ func (m *MetricsServer) Handle(rw http.ResponseWriter, r *http.Request) {
 	}{
 		Name:       m.sd.Self().Name,
 		LeaderName: m.sd.Leader().Name,
-		State:      reflect.TypeOf(m.fsm.State()).Name(),
+		State:      stateName,
 	}
 
 	b, err := json.Marshal(resp)
