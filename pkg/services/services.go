@@ -25,13 +25,22 @@ type ServiceDiscovery struct {
 	namespace   string
 	client      *network.Client
 	k8s         *kubernetes.Clientset
-	leader      *replicas.Replica
+	self        replicas.Replica
+	leader      replicas.Replica
 	pingTimeout time.Duration
 	logger      *zap.Logger
 }
 
 func NewServiceDiscovery(labelKey string, namespace string, pingTimeout time.Duration,
 	client *network.Client, logger *zap.Logger) (*ServiceDiscovery, error) {
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		logger.Warn("couldn't get hostname",
+			zap.Error(err))
+		return nil, err
+	}
+
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		logger.Warn("couldn't create kubernetes config",
@@ -51,20 +60,21 @@ func NewServiceDiscovery(labelKey string, namespace string, pingTimeout time.Dur
 		namespace:   namespace,
 		client:      client,
 		k8s:         clientset,
-		leader:      nil,
+		leader:      replicas.ReplicaNone,
+		self:        replicas.NewReplica(hostname),
 		pingTimeout: pingTimeout,
 		logger:      logger,
 	}, nil
 }
 
-func (s *ServiceDiscovery) Leader() *replicas.Replica {
+func (s *ServiceDiscovery) Leader() replicas.Replica {
 	return s.leader
 }
 
 func (s *ServiceDiscovery) PingLeader() (bool, error) {
 	logger := s.logger.Named("ping-leader")
 
-	if s.leader == nil {
+	if s.leader == replicas.ReplicaNone {
 		logger.Warn("leader is nil")
 		return false, ErrNoLeader
 	}
@@ -73,7 +83,7 @@ func (s *ServiceDiscovery) PingLeader() (bool, error) {
 	defer cancel()
 
 	msg := network.OutgoingMessage{
-		Destination: *s.leader,
+		Destination: s.leader,
 		Content:     messages.MessagePing,
 	}
 
@@ -99,14 +109,7 @@ func (s *ServiceDiscovery) MustBeLeader() (bool, error) {
 func (s *ServiceDiscovery) AnnounceLeadership() error {
 	logger := s.logger.Named("start-election")
 
-	self, err := s.Self()
-	if err != nil {
-		logger.Warn("couldn't determine own identity",
-			zap.Error(err))
-		return err
-	}
-
-	s.leader = &self
+	s.leader = s.Self()
 
 	all, err := s.others()
 	if err != nil {
@@ -177,26 +180,12 @@ func (s *ServiceDiscovery) StartElection() error {
 	return nil
 }
 
-func (s *ServiceDiscovery) Self() (replicas.Replica, error) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		s.logger.Warn("couldn't get hostname",
-			zap.Error(err))
-		return replicas.Replica{}, err
-	}
-
-	return replicas.NewReplica(hostname), err
+func (s *ServiceDiscovery) Self() replicas.Replica {
+	return s.self
 }
 
 func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
 	logger := s.logger.Named("others")
-
-	self, err := s.Self()
-	if err != nil {
-		logger.Warn("couldn't get own name",
-			zap.Error(err))
-		return nil, err
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
 	defer cancel()
@@ -210,7 +199,7 @@ func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
 
 	results := make([]replicas.Replica, 0)
 	for _, pod := range pods.Items {
-		if pod.GetName() == self.Name {
+		if pod.GetName() == s.Self().Name {
 			continue
 		}
 
@@ -224,13 +213,6 @@ func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
 func (s *ServiceDiscovery) potentialLeaders() ([]replicas.Replica, error) {
 	logger := s.logger.Named("potential-leaders")
 
-	self, err := s.Self()
-	if err != nil {
-		logger.Warn("couldn't determine own identity",
-			zap.Error(err))
-		return nil, err
-	}
-
 	others, err := s.others()
 	if err != nil {
 		logger.Warn("couldn't get others",
@@ -240,7 +222,7 @@ func (s *ServiceDiscovery) potentialLeaders() ([]replicas.Replica, error) {
 
 	potentialLeaders := make([]replicas.Replica, 0)
 	for _, other := range others {
-		if self.Name < other.Name {
+		if s.Self().Name < other.Name {
 			potentialLeaders = append(potentialLeaders, other)
 		}
 	}
