@@ -39,20 +39,14 @@ func NewOutgoingMessage(from replicas.Replica, to replicas.Replica, msg messages
 
 type Server struct {
 	electionCh chan IncomingMessage
-	aliveCh    chan IncomingMessage
 	victoryCh  chan IncomingMessage
 	logger     *zap.Logger
 }
 
 func NewServer(logger *zap.Logger) *Server {
-	electionCh := make(chan IncomingMessage)
-	aliveCh := make(chan IncomingMessage)
-	victoryCh := make(chan IncomingMessage)
-
 	return &Server{
-		electionCh: electionCh,
-		aliveCh:    aliveCh,
-		victoryCh:  victoryCh,
+		electionCh: make(chan IncomingMessage),
+		victoryCh:  make(chan IncomingMessage),
 		logger:     logger,
 	}
 }
@@ -79,12 +73,14 @@ func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Fprint(rw, messages.MessagePong)
+
 	switch msg.Message {
 	case messages.MessageElection:
+		logger.Debug("election message received")
 		s.electionCh <- msg
-	case messages.MessageAlive:
-		s.aliveCh <- msg
 	case messages.MessageVictory:
+		logger.Debug("victory message received")
 		s.victoryCh <- msg
 	case messages.MessagePing:
 		logger.Debug("server was pinged")
@@ -98,28 +94,25 @@ func (s *Server) OnElection() <-chan IncomingMessage {
 	return s.electionCh
 }
 
-func (s *Server) OnAlive() <-chan IncomingMessage {
-	return s.aliveCh
-}
-
 func (s *Server) OnVictory() <-chan IncomingMessage {
 	return s.victoryCh
 }
 
 func (s *Server) Close() {
-	s.logger.Debug("comm server closed")
+	s.logger.Debug("comms server closed")
 	close(s.electionCh)
-	close(s.aliveCh)
 	close(s.victoryCh)
 }
 
 type Client struct {
-	logger *zap.Logger
+	aliveCh chan IncomingMessage
+	logger  *zap.Logger
 }
 
 func NewClient(logger *zap.Logger) *Client {
 	return &Client{
-		logger: logger,
+		aliveCh: make(chan IncomingMessage),
+		logger:  logger,
 	}
 }
 
@@ -177,4 +170,13 @@ func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage) error {
 	}
 
 	return nil
+}
+
+func (c *Client) OnAlive() <-chan IncomingMessage {
+	return c.aliveCh
+}
+
+func (c *Client) Close() {
+	c.logger.Debug("comms client closed")
+	close(c.aliveCh)
 }

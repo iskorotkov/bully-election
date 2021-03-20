@@ -48,35 +48,36 @@ func main() {
 		logger.Fatal("kubernetes namespace wasn't set")
 	}
 
-	client := comms.NewClient(logger.Named("client"))
+	commClient := comms.NewClient(logger.Named("client"))
+	defer commClient.Close()
 
-	sd, err := services.NewServiceDiscovery(namespace, time.Second*5, client, logger.Named("service-discovery"))
+	sd, err := services.NewServiceDiscovery(namespace, time.Second*5, commClient,
+		logger.Named("service-discovery"))
 	if err != nil {
 		logger.Fatal("couldn't create service dicovery",
 			zap.Error(err))
 	}
 
-	cfg := states.Config{
+	fsm := states.NewFSM(states.Config{
 		ElectionTimeout:  time.Second,
 		VictoryTimeout:   time.Second,
 		ServiceDiscovery: sd,
 		Logger:           logger.Named("fsm"),
-	}
-
-	fsm := states.NewFSM(cfg)
+	})
 
 	commServer := comms.NewServer(logger.Named("comm-server"))
 	defer commServer.Close()
-	http.HandleFunc("/", commServer.Handle)
-
-	metricsServer := metrics.NewServer(fsm, sd, logger.Named("metrics-server"))
-	http.HandleFunc("/metrics", metricsServer.Handle)
 
 	server := &http.Server{
 		Addr: ":80",
 	}
 
 	go func() {
+		metricsServer := metrics.NewServer(fsm, sd, logger.Named("metrics-server"))
+
+		http.HandleFunc("/", commServer.Handle)
+		http.HandleFunc("/metrics", metricsServer.Handle)
+
 		err := server.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
 			logger.Fatal("error in server occurred",
@@ -98,7 +99,7 @@ func main() {
 		select {
 		case msg := <-commServer.OnElection():
 			fsm.OnElection(msg.From)
-		case msg := <-commServer.OnAlive():
+		case msg := <-commClient.OnAlive():
 			fsm.OnAlive(msg.From)
 		case msg := <-commServer.OnVictory():
 			fsm.OnVictory(msg.From)
