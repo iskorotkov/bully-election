@@ -1,5 +1,9 @@
-image=iskorotkov/bully-election
-version=v0.1.0-alpha.1
+image = iskorotkov/bully-election
+version = v0.1.0-alpha.4
+namespace = chaos-app
+
+.PHONY: ci
+ci: build test build-image push-image deploy
 
 .PHONY: build
 build:
@@ -22,5 +26,9 @@ build-image:
 	docker build -t $(image):$(version) -f build/bully-election.dockerfile .
 
 .PHONY: push-image
-pish-image:
+push-image:
 	docker push $(image):$(version)
+
+.PHONY: deploy
+deploy:
+	kubectl apply -f deploy/bully-election.yml -n $(namespace)
