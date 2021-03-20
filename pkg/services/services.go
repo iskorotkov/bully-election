@@ -22,6 +22,7 @@ var (
 
 type ServiceDiscovery struct {
 	labelKey    string
+	namespace   string
 	client      *network.Client
 	k8s         *kubernetes.Clientset
 	leader      *replicas.Replica
@@ -29,7 +30,8 @@ type ServiceDiscovery struct {
 	logger      *zap.Logger
 }
 
-func NewServiceDiscovery(labelKey string, pingTimeout time.Duration, client *network.Client, logger *zap.Logger) (*ServiceDiscovery, error) {
+func NewServiceDiscovery(labelKey string, namespace string, pingTimeout time.Duration,
+	client *network.Client, logger *zap.Logger) (*ServiceDiscovery, error) {
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		logger.Warn("couldn't create kubernetes config",
@@ -46,6 +48,7 @@ func NewServiceDiscovery(labelKey string, pingTimeout time.Duration, client *net
 
 	return &ServiceDiscovery{
 		labelKey:    labelKey,
+		namespace:   namespace,
 		client:      client,
 		k8s:         clientset,
 		leader:      nil,
@@ -175,44 +178,30 @@ func (s *ServiceDiscovery) StartElection() error {
 }
 
 func (s *ServiceDiscovery) Self() (replicas.Replica, error) {
-	logger := s.logger.Named("self")
-
 	hostname, err := os.Hostname()
 	if err != nil {
-		logger.Warn("couldn't get hostname",
+		s.logger.Warn("couldn't get hostname",
 			zap.Error(err))
 		return replicas.Replica{}, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
-	defer cancel()
-
-	pod, err := s.k8s.CoreV1().Pods("").Get(ctx, hostname, v1.GetOptions{})
-	if err != nil {
-		logger.Warn("couldn't get pod info",
-			zap.String("pod", hostname),
-			zap.Error(err))
-		return replicas.Replica{}, err
-	}
-
-	label, ok := pod.GetLabels()[s.labelKey]
-	if !ok {
-		logger.Warn("couldn't find required label",
-			zap.String("key", s.labelKey),
-			zap.Any("pod", pod))
-		return replicas.Replica{}, err
-	}
-
-	return replicas.NewReplica(label), err
+	return replicas.NewReplica(hostname), err
 }
 
 func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
 	logger := s.logger.Named("others")
 
+	self, err := s.Self()
+	if err != nil {
+		logger.Warn("couldn't get own name",
+			zap.Error(err))
+		return nil, err
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
 	defer cancel()
 
-	endpoints, err := s.k8s.CoreV1().Endpoints("").List(ctx, v1.ListOptions{})
+	pods, err := s.k8s.CoreV1().Pods(s.namespace).List(ctx, v1.ListOptions{})
 	if err != nil {
 		logger.Warn("couldn't get list of pods",
 			zap.Error(err))
@@ -220,12 +209,12 @@ func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
 	}
 
 	results := make([]replicas.Replica, 0)
-	for _, endpoint := range endpoints.Items {
-		if len(endpoint.Subsets[0].Addresses) == 0 {
+	for _, pod := range pods.Items {
+		if pod.GetName() == self.Name {
 			continue
 		}
 
-		replica := replicas.NewReplica(endpoint.GetName())
+		replica := replicas.NewReplica(pod.GetName())
 		results = append(results, replica)
 	}
 

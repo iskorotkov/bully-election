@@ -40,9 +40,15 @@ func main() {
 		}
 	}()
 
+	namespace := os.Getenv("KUBERNETES_NAMESPACE")
+	if namespace == "" {
+		logger.Fatal("kubernetes namespace wasn't set")
+	}
+
 	client := network.NewClient(logger.Named("client"))
 
-	sd, err := services.NewServiceDiscovery("app", time.Second*3, client, logger.Named("service-discovery"))
+	sd, err := services.NewServiceDiscovery("app", namespace, time.Second*3,
+		client, logger.Named("service-discovery"))
 	if err != nil {
 		logger.Fatal("couldn't create service dicovery",
 			zap.Error(err))
