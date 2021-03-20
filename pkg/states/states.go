@@ -2,6 +2,7 @@ package states
 
 import (
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/iskorotkov/bully-election/pkg/replicas"
@@ -27,9 +28,65 @@ type Config struct {
 	Logger           *zap.Logger
 }
 
+type FSM struct {
+	state  State
+	mu     *sync.RWMutex
+	logger *zap.Logger
+}
+
+func NewFSM(config Config) *FSM {
+	return &FSM{
+		state:  start(config),
+		mu:     &sync.RWMutex{},
+		logger: config.Logger.Named("fsm"),
+	}
+}
+
+func (f *FSM) Tick(elapsed time.Duration) error {
+	state, err := f.state.Tick(elapsed)
+	if err != nil {
+		f.logger.Error("error occurred during FSM tick",
+			zap.Error(err))
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.state = state
+	return err
+}
+
+func (f *FSM) OnElection(source replicas.Replica) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.state = f.state.OnElection(source)
+}
+
+func (f *FSM) OnAlive(source replicas.Replica) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.state = f.state.OnAlive(source)
+}
+
+func (f *FSM) OnVictory(source replicas.Replica) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.state = f.state.OnVictory(source)
+}
+
+func (f *FSM) State() State {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	return f.state
+}
+
 // Starting.
 
-func Start(config Config) State {
+func start(config Config) State {
 	return &starting{
 		config: config,
 		logger: config.Logger.Named("starting"),
