@@ -11,7 +11,8 @@ import (
 	"github.com/iskorotkov/bully-election/pkg/messages"
 	"github.com/iskorotkov/bully-election/pkg/replicas"
 	"go.uber.org/zap"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -53,15 +54,18 @@ func NewServiceDiscovery(ns string, timeout time.Duration,
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+	podInfo := &corev1.Pod{}
+	for podInfo.Status.PodIP == "" {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
 
-	podInfo, err := clientset.CoreV1().Pods(ns).Get(ctx, hostname, v1.GetOptions{})
-	if err != nil {
-		logger.Error("couldn't get pod info",
-			zap.String("hostname", hostname),
-			zap.Error(err))
-		return nil, err
+		podInfo, err = clientset.CoreV1().Pods(ns).Get(ctx, hostname, metav1.GetOptions{})
+		if err != nil {
+			logger.Error("couldn't get pod info",
+				zap.String("hostname", hostname),
+				zap.Error(err))
+			return nil, err
+		}
 	}
 
 	self := replicas.NewReplica(podInfo.GetName(), podInfo.Status.PodIP)
@@ -207,7 +211,7 @@ func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
 	defer cancel()
 
-	pods, err := s.k8s.CoreV1().Pods(s.namespace).List(ctx, v1.ListOptions{})
+	pods, err := s.k8s.CoreV1().Pods(s.namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		logger.Error("couldn't get list of pods",
 			zap.Error(err))
@@ -217,6 +221,10 @@ func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
 	results := make([]replicas.Replica, 0)
 	for _, pod := range pods.Items {
 		if pod.GetName() == s.Self().Name {
+			continue
+		}
+
+		if pod.Status.PodIP == "" {
 			continue
 		}
 
