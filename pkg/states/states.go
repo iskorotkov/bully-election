@@ -1,17 +1,12 @@
 package states
 
 import (
-	"errors"
 	"sync"
 	"time"
 
 	"github.com/iskorotkov/bully-election/pkg/replicas"
 	"github.com/iskorotkov/bully-election/pkg/services"
 	"go.uber.org/zap"
-)
-
-var (
-	ErrTransition = errors.New("invalid transition between states")
 )
 
 type State interface {
@@ -22,10 +17,10 @@ type State interface {
 }
 
 type Config struct {
-	ElectionTimeout  time.Duration
-	VictoryTimeout   time.Duration
-	ServiceDiscovery *services.ServiceDiscovery
-	Logger           *zap.Logger
+	WaitBeforeAutoElection time.Duration
+	WaitForOtherElection   time.Duration
+	ServiceDiscovery       *services.ServiceDiscovery
+	Logger                 *zap.Logger
 }
 
 type FSM struct {
@@ -196,7 +191,7 @@ func onElectionStarted(config Config) State {
 	logger := config.Logger.Named("started-election")
 	logger.Info("enter election started state")
 	return &startedElection{
-		elapsed: config.ElectionTimeout,
+		elapsed: config.WaitBeforeAutoElection,
 		config:  config,
 		logger:  logger,
 	}
@@ -281,7 +276,7 @@ func waitForElection(config Config) State {
 	logger := config.Logger.Named("waiting-for-election")
 	logger.Info("enter waiting for election state")
 	return &waitingForElection{
-		elapsed: config.VictoryTimeout,
+		elapsed: config.WaitForOtherElection,
 		config:  config,
 		logger:  logger,
 	}

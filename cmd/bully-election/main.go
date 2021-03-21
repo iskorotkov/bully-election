@@ -59,10 +59,10 @@ func main() {
 	}
 
 	fsm := states.NewFSM(states.Config{
-		ElectionTimeout:  time.Second,
-		VictoryTimeout:   time.Second,
-		ServiceDiscovery: sd,
-		Logger:           logger.Named("fsm"),
+		WaitBeforeAutoElection: time.Second * 5,
+		WaitForOtherElection:   time.Second * 5,
+		ServiceDiscovery:       sd,
+		Logger:                 logger.Named("fsm"),
 	})
 
 	commServer := comms.NewServer(logger.Named("comm-server"))
