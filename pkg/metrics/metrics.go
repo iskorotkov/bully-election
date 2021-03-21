@@ -32,13 +32,13 @@ func (m *MetricsServer) Handle(rw http.ResponseWriter, r *http.Request) {
 	stateName := reflect.TypeOf(state).Elem().Name()
 
 	resp := struct {
-		Name       string `json:"name"`
-		LeaderName string `json:"leaderName"`
-		State      string `json:"state"`
+		Name   string `json:"name"`
+		Leader string `json:"leader,omitempty"`
+		State  string `json:"state"`
 	}{
-		Name:       m.sd.Self().Name,
-		LeaderName: m.sd.Leader().Name,
-		State:      stateName,
+		Name:   m.sd.Self().Name,
+		Leader: m.sd.Leader().Name,
+		State:  stateName,
 	}
 
 	b, err := json.Marshal(resp)
