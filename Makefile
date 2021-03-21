@@ -1,5 +1,5 @@
 image = iskorotkov/bully-election
-version = v0.1.0-alpha.15
+version = v0.1.0-alpha.16
 namespace = chaos-app
 
 .PHONY: ci
@@ -32,3 +32,7 @@ push-image:
 .PHONY: deploy
 deploy:
 	kubectl apply -f deploy/bully-election.yml -n $(namespace)
+
+.PHONY: undeploy
+undeploy:
+	kubectl delete -f deploy/bully-election.yml -n $(namespace)

@@ -53,7 +53,9 @@ func NewServer(logger *zap.Logger) *Server {
 
 func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 	logger := s.logger.Named("handler")
-	logger.Debug("incoming request", zap.Any("request", r))
+	logger.Debug("incoming request",
+		zap.Any("header", r.Header),
+		zap.Any("body", r.Body))
 
 	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -73,17 +75,23 @@ func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logger.Debug("incoming message received and processed",
+		zap.Any("message", msg))
+
 	fmt.Fprint(rw, messages.MessagePong)
 
 	switch msg.Message {
 	case messages.MessageElection:
-		logger.Debug("election message received")
+		logger.Debug("election message received",
+			zap.Any("message", msg))
 		s.electionCh <- msg
 	case messages.MessageVictory:
-		logger.Debug("victory message received")
+		logger.Debug("victory message received",
+			zap.Any("message", msg))
 		s.victoryCh <- msg
 	case messages.MessagePing:
-		logger.Debug("server was pinged")
+		logger.Debug("server was pinged",
+			zap.Any("message", msg))
 	default:
 		logger.Error("unknown message type",
 			zap.Any("message", msg))

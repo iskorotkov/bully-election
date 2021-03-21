@@ -39,7 +39,7 @@ func NewFSM(config Config) *FSM {
 		zap.Any("config", config))
 
 	return &FSM{
-		state:  startElection(config),
+		state:  start(config),
 		mu:     &sync.RWMutex{},
 		logger: config.Logger,
 	}
@@ -99,6 +99,51 @@ func (f *FSM) State() State {
 	return f.state
 }
 
+// Starting.
+
+func start(config Config) State {
+	logger := config.Logger.Named("starting")
+	logger.Info("enter starting state")
+	return &starting{
+		config: config,
+		logger: logger,
+	}
+}
+
+type starting struct {
+	config Config
+	logger *zap.Logger
+}
+
+func (s *starting) Tick(elapsed time.Duration) (State, error) {
+	ok, err := s.config.ServiceDiscovery.MustBeLeader()
+	if err != nil {
+		return s, err
+	}
+
+	if ok {
+		return elect(s.config), nil
+	}
+
+	if err := s.config.ServiceDiscovery.StartElection(); err != nil {
+		return s, err
+	}
+
+	return onElectionStarted(s.config), nil
+}
+
+func (s *starting) OnElection(source replicas.Replica) State {
+	return s
+}
+
+func (s *starting) OnAlive(source replicas.Replica) State {
+	return s
+}
+
+func (s *starting) OnVictory(source replicas.Replica) State {
+	return s
+}
+
 // Starting election.
 
 func startElection(config Config) State {
@@ -125,7 +170,10 @@ func (s *startingElection) Tick(elapsed time.Duration) (State, error) {
 		return elect(s.config), nil
 	}
 
-	s.config.ServiceDiscovery.StartElection()
+	if err := s.config.ServiceDiscovery.StartElection(); err != nil {
+		return s, err
+	}
+
 	return onElectionStarted(s.config), nil
 }
 
