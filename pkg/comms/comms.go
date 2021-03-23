@@ -59,8 +59,9 @@ func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 
 	var msg IncomingMessage
 	if err := json.Unmarshal(b, &msg); err != nil {
-		msg := "couldn't unamrshal request body"
+		msg := "couldn't unmarshal request body"
 		logger.Error(msg,
+			zap.ByteString("request", b),
 			zap.Error(err))
 		http.Error(rw, msg, http.StatusBadRequest)
 		return
@@ -183,6 +184,7 @@ func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage) error {
 	if err := json.Unmarshal(b, &msg); err != nil {
 		logger.Error("couldn't unmarshal response message",
 			zap.Any("request", message),
+			zap.ByteString("response", b),
 			zap.Error(err))
 		return err
 	}

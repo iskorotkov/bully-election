@@ -193,7 +193,9 @@ func (s *ServiceDiscovery) PingLeader() error {
 
 	go func() {
 		if err := s.client.Send(ctx, msg); err != nil {
-			logger.Error("couldn't send message", zap.Any("message", msg))
+			logger.Error("couldn't send message",
+				zap.Any("message", msg),
+				zap.Error(err))
 			return
 		}
 	}()
