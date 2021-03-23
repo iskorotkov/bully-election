@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"reflect"
 
 	"github.com/iskorotkov/bully-election/pkg/services"
 	"github.com/iskorotkov/bully-election/pkg/states"
@@ -28,9 +27,6 @@ func NewServer(fsm *states.FSM, sd *services.ServiceDiscovery, logger *zap.Logge
 func (m *MetricsServer) Handle(rw http.ResponseWriter, r *http.Request) {
 	logger := m.logger.Named("handle")
 
-	state := m.fsm.State()
-	stateName := reflect.TypeOf(state).Elem().Name()
-
 	resp := struct {
 		Name   string `json:"name"`
 		Leader string `json:"leader,omitempty"`
@@ -38,7 +34,7 @@ func (m *MetricsServer) Handle(rw http.ResponseWriter, r *http.Request) {
 	}{
 		Name:   m.sd.Self().Name,
 		Leader: m.sd.Leader().Name,
-		State:  stateName,
+		State:  string(m.fsm.State().Role()),
 	}
 
 	b, err := json.Marshal(resp)

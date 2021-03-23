@@ -76,6 +76,8 @@ func main() {
 	fsm := states.NewFSM(states.Config{
 		WaitBeforeAutoElection: time.Second * 5,
 		WaitForOtherElection:   time.Second * 5,
+		WaitForLeaderResponse:  time.Second * 5,
+		WaitBeforeNextPing:     time.Second * 5,
 		ServiceDiscovery:       sd,
 		Logger:                 logger.Named("fsm"),
 	})
@@ -112,12 +114,14 @@ func main() {
 
 	for {
 		select {
-		case msg := <-commServer.OnElection():
-			fsm.OnElection(msg.From)
-		case msg := <-commClient.OnResponse():
-			fsm.OnAlive(msg.From)
-		case msg := <-commServer.OnVictory():
-			fsm.OnVictory(msg.From)
+		case msg := <-commServer.OnElectionRequest():
+			fsm.OnElectionMessage(msg.From)
+		case msg := <-commServer.OnVictoryRequest():
+			fsm.OnVictoryMessage(msg.From)
+		case msg := <-commClient.OnAliveResponse():
+			fsm.OnAliveResponse(msg.From)
+		case msg := <-commClient.OnElectionResponse():
+			fsm.OnElectionResponse(msg.From)
 		default:
 			err := fsm.Tick(tickInterval)
 			if err != nil {

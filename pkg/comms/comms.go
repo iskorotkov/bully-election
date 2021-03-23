@@ -77,19 +77,19 @@ func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 	logger.Debug("incoming message received and processed",
 		zap.Any("message", msg))
 
-	fmt.Fprint(rw, messages.MessagePong)
+	fmt.Fprint(rw, messages.MessageConfirm)
 
 	switch msg.Message {
 	case messages.MessageElection:
-		logger.Debug("election message received",
+		logger.Debug("election request received",
 			zap.Any("message", msg))
 		s.electionCh <- msg
 	case messages.MessageVictory:
 		logger.Debug("victory message received",
 			zap.Any("message", msg))
 		s.victoryCh <- msg
-	case messages.MessagePing:
-		logger.Debug("server was pinged",
+	case messages.MessageAlive:
+		logger.Debug("alive check received",
 			zap.Any("message", msg))
 	default:
 		logger.Error("unknown message type",
@@ -97,11 +97,11 @@ func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) OnElection() <-chan IncomingMessage {
+func (s *Server) OnElectionRequest() <-chan IncomingMessage {
 	return s.electionCh
 }
 
-func (s *Server) OnVictory() <-chan IncomingMessage {
+func (s *Server) OnVictoryRequest() <-chan IncomingMessage {
 	return s.victoryCh
 }
 
@@ -112,18 +112,20 @@ func (s *Server) Close() {
 }
 
 type Client struct {
-	aliveCh chan IncomingMessage
-	logger  *zap.Logger
+	aliveResponseCh    chan IncomingMessage
+	electionResponseCh chan IncomingMessage
+	logger             *zap.Logger
 }
 
 func NewClient(logger *zap.Logger) *Client {
 	return &Client{
-		aliveCh: make(chan IncomingMessage),
-		logger:  logger,
+		aliveResponseCh:    make(chan IncomingMessage),
+		electionResponseCh: make(chan IncomingMessage),
+		logger:             logger,
 	}
 }
 
-func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage, notify bool) error {
+func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage) error {
 	logger := c.logger.Named("send")
 	logger.Debug("starting sending message",
 		zap.Any("message", outgoing))
@@ -191,18 +193,36 @@ func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage, notify bool
 		return err
 	}
 
-	if notify {
-		c.aliveCh <- incoming
+	logger.Debug("response received",
+		zap.Any("response", incoming))
+
+	switch outgoing.Message {
+	case messages.MessageAlive:
+		logger.Debug("alive response received",
+			zap.Any("message", incoming))
+		c.aliveResponseCh <- incoming
+	case messages.MessageElection:
+		logger.Debug("election response received",
+			zap.Any("message", incoming))
+		c.electionResponseCh <- incoming
+	case messages.MessageVictory:
+		logger.Debug("victory response received",
+			zap.Any("message", incoming))
 	}
 
 	return nil
 }
 
-func (c *Client) OnResponse() <-chan IncomingMessage {
-	return c.aliveCh
+func (c *Client) OnAliveResponse() <-chan IncomingMessage {
+	return c.aliveResponseCh
+}
+
+func (c *Client) OnElectionResponse() <-chan IncomingMessage {
+	return c.electionResponseCh
 }
 
 func (c *Client) Close() {
 	c.logger.Debug("comms client closed")
-	close(c.aliveCh)
+	close(c.aliveResponseCh)
+	close(c.electionResponseCh)
 }

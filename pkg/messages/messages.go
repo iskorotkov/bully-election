@@ -8,6 +8,5 @@ var (
 	MessageElection = Message{"election"}
 	MessageAlive    = Message{"alive"}
 	MessageVictory  = Message{"victory"}
-	MessagePing     = Message{"ping"}
-	MessagePong     = Message{"pong"}
+	MessageConfirm  = Message{"confirm"}
 )

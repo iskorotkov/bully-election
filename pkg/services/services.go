@@ -119,7 +119,7 @@ func NewServiceDiscovery(config Config) (*ServiceDiscovery, error) {
 		time.Sleep(config.SelfInfoInverval)
 	}
 
-	self, _ := replicas.FromPod(thisPod)
+	self := replicas.FromPod(thisPod)
 
 	config.Logger.Info("fetched info about self",
 		zap.Any("self", self))
@@ -169,28 +169,33 @@ func (s *ServiceDiscovery) RememberLeader(leader replicas.Replica) {
 	s.leader = leader
 }
 
-func (s *ServiceDiscovery) PingLeader() (bool, error) {
+func (s *ServiceDiscovery) PingLeader() error {
 	logger := s.logger.Named("ping-leader")
 	logger.Info("leader ping initiated")
 
 	if s.leader == replicas.ReplicaNone {
 		logger.Error("leader is nil")
-		return false, ErrNoLeader
+		return ErrNoLeader
 	}
 
-	msg := comms.NewOutgoingMessage(s.self, s.leader, messages.MessagePing)
+	if s.leader.IP == "" {
+		logger.Error("leader doesn't have assigned IP")
+		return ErrNoLeader
+	}
+
+	msg := comms.NewOutgoingMessage(s.self, s.leader, messages.MessageAlive)
 
 	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
 	defer cancel()
 
 	go func() {
-		if err := s.client.Send(ctx, msg, true); err != nil {
+		if err := s.client.Send(ctx, msg); err != nil {
 			logger.Error("couldn't send message", zap.Any("message", msg))
 			return
 		}
 	}()
 
-	return true, nil
+	return nil
 }
 
 func (s *ServiceDiscovery) MustBeLeader() (bool, error) {
@@ -220,7 +225,13 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 		go func() {
 			defer wg.Done()
 
-			if err := s.client.Send(ctx, msg, false); err != nil {
+			if msg.To.IP == "" {
+				logger.Warn("receiver doesn't have assigned IP address",
+					zap.Any("message", msg))
+				return
+			}
+
+			if err := s.client.Send(ctx, msg); err != nil {
 				logger.Error("couldn't send victory message",
 					zap.Any("message", msg),
 					zap.Error(err))
@@ -252,7 +263,13 @@ func (s *ServiceDiscovery) StartElection() error {
 		go func() {
 			defer wg.Done()
 
-			if err := s.client.Send(ctx, msg, false); err != nil {
+			if msg.To.IP == "" {
+				logger.Warn("receiver doesn't have assigned IP address",
+					zap.Any("message", msg))
+				return
+			}
+
+			if err := s.client.Send(ctx, msg); err != nil {
 				logger.Error("couldn't send election message",
 					zap.Any("message", msg),
 					zap.Error(err))

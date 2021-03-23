@@ -9,16 +9,28 @@ import (
 	"go.uber.org/zap"
 )
 
+type Role string
+
+var (
+	RoleLeader        = Role("leader")
+	RoleReplica       = Role("replica")
+	RoleTransitioning = Role("transitioning")
+)
+
 type State interface {
 	Tick(elapsed time.Duration) (State, error)
-	OnElection(source replicas.Replica) State
-	OnAlive(source replicas.Replica) State
-	OnVictory(source replicas.Replica) State
+	OnElectionMessage(source replicas.Replica) State
+	OnVictoryMessage(source replicas.Replica) State
+	OnAliveResponse(source replicas.Replica) State
+	OnElectionResponse(source replicas.Replica) State
+	Role() Role
 }
 
 type Config struct {
 	WaitBeforeAutoElection time.Duration
 	WaitForOtherElection   time.Duration
+	WaitForLeaderResponse  time.Duration
+	WaitBeforeNextPing     time.Duration
 	ServiceDiscovery       *services.ServiceDiscovery
 	Logger                 *zap.Logger
 }
@@ -57,34 +69,44 @@ func (f *FSM) Tick(elapsed time.Duration) error {
 	return err
 }
 
-func (f *FSM) OnElection(source replicas.Replica) {
+func (f *FSM) OnElectionMessage(source replicas.Replica) {
 	f.logger.Debug("on election called",
 		zap.Any("source", source))
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.state = f.state.OnElection(source)
+	f.state = f.state.OnElectionMessage(source)
 }
 
-func (f *FSM) OnAlive(source replicas.Replica) {
-	f.logger.Debug("on alive called",
-		zap.Any("source", source))
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	f.state = f.state.OnAlive(source)
-}
-
-func (f *FSM) OnVictory(source replicas.Replica) {
+func (f *FSM) OnVictoryMessage(source replicas.Replica) {
 	f.logger.Debug("on victory called",
 		zap.Any("source", source))
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.state = f.state.OnVictory(source)
+	f.state = f.state.OnVictoryMessage(source)
+}
+
+func (f *FSM) OnAliveResponse(source replicas.Replica) {
+	f.logger.Debug("on alive called",
+		zap.Any("source", source))
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.state = f.state.OnAliveResponse(source)
+}
+
+func (f *FSM) OnElectionResponse(source replicas.Replica) {
+	f.logger.Debug("on alive called",
+		zap.Any("source", source))
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.state = f.state.OnElectionResponse(source)
 }
 
 func (f *FSM) State() State {
@@ -111,12 +133,12 @@ type starting struct {
 }
 
 func (s *starting) Tick(elapsed time.Duration) (State, error) {
-	ok, err := s.config.ServiceDiscovery.MustBeLeader()
+	isLeader, err := s.config.ServiceDiscovery.MustBeLeader()
 	if err != nil {
 		return s, err
 	}
 
-	if ok {
+	if isLeader {
 		return elect(s.config), nil
 	}
 
@@ -127,16 +149,30 @@ func (s *starting) Tick(elapsed time.Duration) (State, error) {
 	return onElectionStarted(s.config), nil
 }
 
-func (s *starting) OnElection(source replicas.Replica) State {
+func (s *starting) OnElectionMessage(source replicas.Replica) State {
 	return s
 }
 
-func (s *starting) OnAlive(source replicas.Replica) State {
+func (s *starting) OnVictoryMessage(source replicas.Replica) State {
 	return s
 }
 
-func (s *starting) OnVictory(source replicas.Replica) State {
+func (s *starting) OnAliveResponse(source replicas.Replica) State {
+	s.logger.Warn("not expected alive response",
+		zap.Any("source", source))
+
 	return s
+}
+
+func (s *starting) OnElectionResponse(source replicas.Replica) State {
+	s.logger.Warn("not expected election response",
+		zap.Any("source", source))
+
+	return s
+}
+
+func (s *starting) Role() Role {
+	return RoleTransitioning
 }
 
 // Starting election.
@@ -172,17 +208,31 @@ func (s *startingElection) Tick(elapsed time.Duration) (State, error) {
 	return onElectionStarted(s.config), nil
 }
 
-func (s *startingElection) OnElection(source replicas.Replica) State {
+func (s *startingElection) OnElectionMessage(source replicas.Replica) State {
 	return s
 }
 
-func (s *startingElection) OnAlive(source replicas.Replica) State {
-	return s
-}
-
-func (s *startingElection) OnVictory(source replicas.Replica) State {
+func (s *startingElection) OnVictoryMessage(source replicas.Replica) State {
 	s.config.ServiceDiscovery.RememberLeader(source)
-	return notElect(s.config)
+	return waitToPing(s.config)
+}
+
+func (s *startingElection) OnAliveResponse(source replicas.Replica) State {
+	s.logger.Warn("not expected alive response",
+		zap.Any("source", source))
+
+	return s
+}
+
+func (s *startingElection) OnElectionResponse(source replicas.Replica) State {
+	s.logger.Warn("not expected election response",
+		zap.Any("source", source))
+
+	return s
+}
+
+func (s *startingElection) Role() Role {
+	return RoleTransitioning
 }
 
 // Started election.
@@ -212,17 +262,28 @@ func (s *startedElection) Tick(elapsed time.Duration) (State, error) {
 	return s, nil
 }
 
-func (s *startedElection) OnElection(source replicas.Replica) State {
+func (s *startedElection) OnElectionMessage(source replicas.Replica) State {
 	return s
 }
 
-func (s *startedElection) OnAlive(source replicas.Replica) State {
+func (s *startedElection) OnVictoryMessage(source replicas.Replica) State {
+	s.config.ServiceDiscovery.RememberLeader(source)
+	return waitToPing(s.config)
+}
+
+func (s *startedElection) OnAliveResponse(source replicas.Replica) State {
+	s.logger.Warn("not expected alive response",
+		zap.Any("source", source))
+
+	return s
+}
+
+func (s *startedElection) OnElectionResponse(source replicas.Replica) State {
 	return waitForElection(s.config)
 }
 
-func (s *startedElection) OnVictory(source replicas.Replica) State {
-	s.config.ServiceDiscovery.RememberLeader(source)
-	return notElect(s.config)
+func (s *startedElection) Role() Role {
+	return RoleTransitioning
 }
 
 // Elected.
@@ -257,19 +318,33 @@ func (s *elected) Tick(elapsed time.Duration) (State, error) {
 	return s, nil
 }
 
-func (s *elected) OnElection(source replicas.Replica) State {
+func (s *elected) OnElectionMessage(source replicas.Replica) State {
 	return startElection(s.config)
 }
 
-func (s *elected) OnAlive(source replicas.Replica) State {
-	return s
-}
-
-func (s *elected) OnVictory(source replicas.Replica) State {
+func (s *elected) OnVictoryMessage(source replicas.Replica) State {
 	s.logger.Warn("elected replica received victory message",
 		zap.Any("source", source))
 
 	return startElection(s.config)
+}
+
+func (s *elected) OnAliveResponse(source replicas.Replica) State {
+	s.logger.Warn("not expected alive response",
+		zap.Any("source", source))
+
+	return s
+}
+
+func (s *elected) OnElectionResponse(source replicas.Replica) State {
+	s.logger.Warn("not expected election response",
+		zap.Any("source", source))
+
+	return s
+}
+
+func (s *elected) Role() Role {
+	return RoleLeader
 }
 
 // Waiting for election.
@@ -299,57 +374,144 @@ func (s *waitingForElection) Tick(elapsed time.Duration) (State, error) {
 	return s, nil
 }
 
-func (s *waitingForElection) OnElection(source replicas.Replica) State {
+func (s *waitingForElection) OnElectionMessage(source replicas.Replica) State {
 	return s
 }
 
-func (s *waitingForElection) OnAlive(source replicas.Replica) State {
-	return s
-}
-
-func (s *waitingForElection) OnVictory(source replicas.Replica) State {
+func (s *waitingForElection) OnVictoryMessage(source replicas.Replica) State {
 	s.config.ServiceDiscovery.RememberLeader(source)
-	return notElect(s.config)
+	return waitToPing(s.config)
+}
+
+func (s *waitingForElection) OnAliveResponse(source replicas.Replica) State {
+	s.logger.Warn("not expected alive response",
+		zap.Any("source", source))
+
+	return s
+}
+
+func (s *waitingForElection) OnElectionResponse(source replicas.Replica) State {
+	s.logger.Warn("not expected election response",
+		zap.Any("source", source))
+
+	return s
+}
+
+func (s *waitingForElection) Role() Role {
+	return RoleReplica
 }
 
 // Not elected.
 
-func notElect(config Config) State {
-	logger := config.Logger.Named("not-elected")
+func waitToPing(config Config) State {
+	logger := config.Logger.Named("waiting-to-ping")
+	logger.Info("enter waiting to ping state")
+	return &waitingToPing{
+		interval: config.WaitBeforeNextPing,
+		config:   config,
+		logger:   logger,
+	}
+}
+
+type waitingToPing struct {
+	interval time.Duration
+	config   Config
+	logger   *zap.Logger
+}
+
+func (s *waitingToPing) Tick(elapsed time.Duration) (State, error) {
+	s.interval -= elapsed
+	if s.interval <= 0 {
+		if err := s.config.ServiceDiscovery.PingLeader(); err != nil {
+			return startElection(s.config), err
+		}
+
+		return waitForLeader(s.config), nil
+	}
+
+	return s, nil
+}
+
+func (s *waitingToPing) OnElectionMessage(source replicas.Replica) State {
+	return startElection(s.config)
+}
+
+func (s *waitingToPing) OnVictoryMessage(source replicas.Replica) State {
+	s.logger.Warn("not expected victory message",
+		zap.Any("source", source))
+
+	s.config.ServiceDiscovery.RememberLeader(source)
+	return waitToPing(s.config)
+}
+
+func (s *waitingToPing) OnAliveResponse(source replicas.Replica) State {
+	s.logger.Warn("not expected alive response",
+		zap.Any("source", source))
+
+	return s
+}
+
+func (s *waitingToPing) OnElectionResponse(source replicas.Replica) State {
+	s.logger.Warn("not expected election response",
+		zap.Any("source", source))
+
+	return s
+}
+
+func (s *waitingToPing) Role() Role {
+	return RoleReplica
+}
+
+// Not elected.
+
+func waitForLeader(config Config) State {
+	logger := config.Logger.Named("waiting-for-leader")
 	logger.Info("enter not elected state")
-	return &notElected{
-		config: config,
-		logger: logger,
+	return &waitingForLeader{
+		timeout: config.WaitForLeaderResponse,
+		config:  config,
+		logger:  logger,
 	}
 }
 
-type notElected struct {
-	config Config
-	logger *zap.Logger
+type waitingForLeader struct {
+	timeout time.Duration
+	config  Config
+	logger  *zap.Logger
 }
 
-func (s *notElected) Tick(elapsed time.Duration) (State, error) {
-	ok, err := s.config.ServiceDiscovery.PingLeader()
-	if err != nil {
-		return s, err
-	}
-
-	if !ok {
+func (s *waitingForLeader) Tick(elapsed time.Duration) (State, error) {
+	s.timeout -= elapsed
+	if s.timeout <= 0 {
 		return startElection(s.config), nil
 	}
 
 	return s, nil
 }
 
-func (s *notElected) OnElection(source replicas.Replica) State {
-	return s
+func (s *waitingForLeader) OnElectionMessage(source replicas.Replica) State {
+	return startElection(s.config)
 }
 
-func (s *notElected) OnAlive(source replicas.Replica) State {
-	return s
-}
+func (s *waitingForLeader) OnVictoryMessage(source replicas.Replica) State {
+	s.logger.Warn("not expected victory message",
+		zap.Any("source", source))
 
-func (s *notElected) OnVictory(source replicas.Replica) State {
 	s.config.ServiceDiscovery.RememberLeader(source)
+	return waitToPing(s.config)
+}
+
+func (s *waitingForLeader) OnAliveResponse(source replicas.Replica) State {
+	return waitToPing(s.config)
+}
+
+func (s *waitingForLeader) OnElectionResponse(source replicas.Replica) State {
+	s.logger.Warn("not expected election response",
+		zap.Any("source", source))
+
 	return s
+}
+
+func (s *waitingForLeader) Role() Role {
+	return RoleReplica
 }

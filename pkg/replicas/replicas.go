@@ -18,21 +18,14 @@ func NewReplica(name string, ip string) Replica {
 	}
 }
 
-func FromPod(pod v1.Pod) (Replica, bool) {
-	if pod.Status.PodIP == "" {
-		return ReplicaNone, false
-	}
-
-	return NewReplica(pod.GetName(), pod.Status.PodIP), true
+func FromPod(pod v1.Pod) Replica {
+	return NewReplica(pod.GetName(), pod.Status.PodIP)
 }
 
 func FromPods(pods []v1.Pod) []Replica {
 	var replicas []Replica
 	for _, pod := range pods {
-		replica, ok := FromPod(pod)
-		if ok {
-			replicas = append(replicas, replica)
-		}
+		replicas = append(replicas, FromPod(pod))
 	}
 
 	return replicas
