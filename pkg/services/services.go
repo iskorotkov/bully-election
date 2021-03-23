@@ -22,76 +22,151 @@ var (
 )
 
 type ServiceDiscovery struct {
-	namespace   string
-	client      *comms.Client
-	k8s         *kubernetes.Clientset
-	self        replicas.Replica
-	leader      replicas.Replica
-	pingTimeout time.Duration
-	logger      *zap.Logger
+	namespace string
+
+	// Request timeouts.
+	pingTimeout       time.Duration
+	electionTimeout   time.Duration
+	leadershipTimeout time.Duration
+	refreshTimeout    time.Duration
+
+	// Clients.
+	client     *comms.Client
+	kubeClient *kubernetes.Clientset
+
+	// Self.
+	self replicas.Replica
+
+	// Leader.
+	leader replicas.Replica
+
+	// Others.
+	othersInternal []replicas.Replica
+	othersM        *sync.RWMutex
+
+	// Logging.
+	logger *zap.Logger
 }
 
-func NewServiceDiscovery(ns string, timeout time.Duration, selfInfoTimeout time.Duration,
-	client *comms.Client, logger *zap.Logger) (*ServiceDiscovery, error) {
+type Config struct {
+	Namespace string
+
+	// Request timeouts.
+	PingTimeout       time.Duration
+	ElectionTimeout   time.Duration
+	LeadershipTimeout time.Duration
+	RefreshTimeout    time.Duration
+	SelfInfoTimeout   time.Duration
+
+	// Intervals.
+	RefreshInterval  time.Duration
+	SelfInfoInverval time.Duration
+
+	Client *comms.Client
+	Logger *zap.Logger
+}
+
+func NewServiceDiscovery(config Config) (*ServiceDiscovery, error) {
+	// Hostname.
 	hostname, err := os.Hostname()
 	if err != nil {
-		logger.Error("couldn't get hostname",
+		config.Logger.Error("couldn't get hostname",
 			zap.Error(err))
 		return nil, err
 	}
 
-	config, err := rest.InClusterConfig()
+	// Kubernetes client.
+	kubeConfig, err := rest.InClusterConfig()
 	if err != nil {
-		logger.Error("couldn't create kubernetes config",
+		config.Logger.Error("couldn't create kubernetes config",
 			zap.Error(err))
 		return nil, err
 	}
 
-	clientset, err := kubernetes.NewForConfig(config)
+	clientset, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
-		logger.Error("couldn't create kubernetes clientset",
+		config.Logger.Error("couldn't create kubernetes clientset",
 			zap.Error(err))
 		return nil, err
 	}
 
-	podInfo := &corev1.Pod{}
-	for podInfo.Status.PodIP == "" {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	var (
+		thisPod   corev1.Pod
+		otherPods []corev1.Pod
+	)
+
+	// Fetch info about pods.
+	// Continue until current pod gets assigned IP address.
+	for thisPod.Status.PodIP == "" {
+		ctx, cancel := context.WithTimeout(context.Background(), config.SelfInfoTimeout)
 		defer cancel()
 
-		podInfo, err = clientset.CoreV1().Pods(ns).Get(ctx, hostname, metav1.GetOptions{})
+		pods, err := clientset.CoreV1().Pods(config.Namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
-			logger.Error("couldn't get pod info",
+			config.Logger.Error("couldn't get pod info",
 				zap.String("hostname", hostname),
 				zap.Error(err))
 			return nil, err
 		}
 
-		time.Sleep(selfInfoTimeout)
+		for index, pod := range pods.Items {
+			if pod.GetName() == hostname {
+				thisPod = pod
+				otherPods = append(pods.Items[:index], pods.Items[index+1:]...)
+			}
+		}
+
+		time.Sleep(config.SelfInfoInverval)
 	}
 
-	self := replicas.NewReplica(podInfo.GetName(), podInfo.Status.PodIP)
+	self, _ := replicas.FromPod(thisPod)
 
-	logger.Info("fetched info about self",
+	config.Logger.Info("fetched info about self",
 		zap.Any("self", self))
 
-	return &ServiceDiscovery{
-		namespace:   ns,
-		client:      client,
-		k8s:         clientset,
-		leader:      replicas.ReplicaNone,
-		self:        self,
-		pingTimeout: timeout,
-		logger:      logger,
-	}, nil
+	s := &ServiceDiscovery{
+		namespace: config.Namespace,
+		// Timeouts.
+		pingTimeout:       config.PingTimeout,
+		electionTimeout:   config.ElectionTimeout,
+		leadershipTimeout: config.LeadershipTimeout,
+		refreshTimeout:    config.RefreshTimeout,
+		// Clients.
+		client:     config.Client,
+		kubeClient: clientset,
+		// Replicas.
+		self:   self,
+		leader: replicas.ReplicaNone,
+		// Others.
+		othersInternal: replicas.FromPods(otherPods),
+		othersM:        &sync.RWMutex{},
+		// Logging.
+		logger: config.Logger,
+	}
+
+	go func() {
+		for {
+			others, err := s.refreshOthers()
+			if err != nil {
+				config.Logger.Error("",
+					zap.Error(err))
+			} else {
+				func() {
+					s.othersM.Lock()
+					defer s.othersM.Unlock()
+					s.othersInternal = others
+				}()
+			}
+
+			time.Sleep(config.RefreshInterval)
+		}
+	}()
+
+	return s, nil
 }
 
 func (s *ServiceDiscovery) RememberLeader(leader replicas.Replica) {
 	s.leader = leader
-}
-
-func (s *ServiceDiscovery) Leader() replicas.Replica {
-	return s.leader
 }
 
 func (s *ServiceDiscovery) PingLeader() (bool, error) {
@@ -103,15 +178,17 @@ func (s *ServiceDiscovery) PingLeader() (bool, error) {
 		return false, ErrNoLeader
 	}
 
+	msg := comms.NewOutgoingMessage(s.self, s.leader, messages.MessagePing)
+
 	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
 	defer cancel()
 
-	msg := comms.NewOutgoingMessage(s.self, s.leader, messages.MessagePing)
-
-	if err := s.client.Send(ctx, msg); err != nil {
-		logger.Error("couldn't send message", zap.Any("message", msg))
-		return false, err
-	}
+	go func() {
+		if err := s.client.Send(ctx, msg, true); err != nil {
+			logger.Error("couldn't send message", zap.Any("message", msg))
+			return
+		}
+	}()
 
 	return true, nil
 }
@@ -119,34 +196,23 @@ func (s *ServiceDiscovery) PingLeader() (bool, error) {
 func (s *ServiceDiscovery) MustBeLeader() (bool, error) {
 	s.logger.Info("check if must become a leader")
 
-	potentialLeaders, err := s.potentialLeaders()
-	if err != nil {
-		s.logger.Error("couldn't find potential leaders",
-			zap.Error(err))
-		return false, err
-	}
-
+	potentialLeaders := s.PotentialLeadersSnapshot()
 	return len(potentialLeaders) == 0, nil
 }
 
 func (s *ServiceDiscovery) AnnounceLeadership() error {
-	logger := s.logger.Named("start-election")
-	logger.Info("announce leadership")
+	logger := s.logger.Named("announce-leadership")
+	logger.Info("start announcement")
 
-	s.leader = s.Self()
+	s.RememberLeader(s.self)
 
-	others, err := s.others()
-	if err != nil {
-		logger.Error("couldn't fetch other replicas",
-			zap.Error(err))
-		return err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
-	defer cancel()
+	others := s.OthersSnapshot()
 
 	wg := sync.WaitGroup{}
 	wg.Add(len(others))
+
+	ctx, cancel := context.WithTimeout(context.Background(), s.leadershipTimeout)
+	defer cancel()
 
 	for _, pod := range others {
 		msg := comms.NewOutgoingMessage(s.self, pod, messages.MessageVictory)
@@ -154,7 +220,7 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 		go func() {
 			defer wg.Done()
 
-			if err := s.client.Send(ctx, msg); err != nil {
+			if err := s.client.Send(ctx, msg, false); err != nil {
 				logger.Error("couldn't send victory message",
 					zap.Any("message", msg),
 					zap.Error(err))
@@ -172,18 +238,13 @@ func (s *ServiceDiscovery) StartElection() error {
 	logger := s.logger.Named("start-election")
 	logger.Info("election started")
 
-	potentialLeaders, err := s.potentialLeaders()
-	if err != nil {
-		logger.Error("couldn't fetch potential leaders",
-			zap.Error(err))
-		return err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
-	defer cancel()
+	potentialLeaders := s.PotentialLeadersSnapshot()
 
 	wg := sync.WaitGroup{}
 	wg.Add(len(potentialLeaders))
+
+	ctx, cancel := context.WithTimeout(context.Background(), s.electionTimeout)
+	defer cancel()
 
 	for _, pl := range potentialLeaders {
 		msg := comms.NewOutgoingMessage(s.self, pl, messages.MessageElection)
@@ -191,7 +252,7 @@ func (s *ServiceDiscovery) StartElection() error {
 		go func() {
 			defer wg.Done()
 
-			if err := s.client.Send(ctx, msg); err != nil {
+			if err := s.client.Send(ctx, msg, false); err != nil {
 				logger.Error("couldn't send election message",
 					zap.Any("message", msg),
 					zap.Error(err))
@@ -209,56 +270,26 @@ func (s *ServiceDiscovery) Self() replicas.Replica {
 	return s.self
 }
 
-func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
-	logger := s.logger.Named("others")
-	logger.Debug("looking for others")
-
-	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
-	defer cancel()
-
-	pods, err := s.k8s.CoreV1().Pods(s.namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		logger.Error("couldn't get list of pods",
-			zap.Error(err))
-		return nil, err
-	}
-
-	results := make([]replicas.Replica, 0)
-	for _, pod := range pods.Items {
-		if pod.GetName() == s.Self().Name {
-			continue
-		}
-
-		if pod.Status.PodIP == "" {
-			logger.Info("pod doesn't have assigned ip address",
-				zap.String("pod", pod.GetName()))
-			continue
-		}
-
-		replica := replicas.NewReplica(pod.GetName(), pod.Status.PodIP)
-		results = append(results, replica)
-	}
-
-	logger.Debug("others found",
-		zap.Any("others", results))
-
-	return results, nil
+func (s *ServiceDiscovery) Leader() replicas.Replica {
+	return s.leader
 }
 
-func (s *ServiceDiscovery) potentialLeaders() ([]replicas.Replica, error) {
+func (s *ServiceDiscovery) OthersSnapshot() []replicas.Replica {
+	s.othersM.RLock()
+	defer s.othersM.RUnlock()
+
+	return s.othersInternal
+}
+
+func (s *ServiceDiscovery) PotentialLeadersSnapshot() []replicas.Replica {
 	logger := s.logger.Named("potential-leaders")
 	logger.Debug("looking for potential leaders")
 
-	others, err := s.others()
-	if err != nil {
-		logger.Error("couldn't get others",
-			zap.Error(err))
-		return nil, err
-	}
+	others := s.OthersSnapshot()
 
 	potentialLeaders := make([]replicas.Replica, 0)
 	for _, other := range others {
-		if s.Self().Name < other.Name {
+		if s.self.Name < other.Name {
 			potentialLeaders = append(potentialLeaders, other)
 		}
 	}
@@ -266,5 +297,34 @@ func (s *ServiceDiscovery) potentialLeaders() ([]replicas.Replica, error) {
 	logger.Debug("potential leaders found",
 		zap.Any("leaders", potentialLeaders))
 
-	return potentialLeaders, nil
+	return potentialLeaders
+}
+
+func (s *ServiceDiscovery) refreshOthers() ([]replicas.Replica, error) {
+	logger := s.logger.Named("refresh-others")
+	logger.Debug("looking for others")
+
+	ctx, cancel := context.WithTimeout(context.Background(), s.refreshTimeout)
+	defer cancel()
+
+	pods, err := s.kubeClient.CoreV1().Pods(s.namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		logger.Error("couldn't get list of pods",
+			zap.Error(err))
+		return nil, err
+	}
+
+	var otherPods []corev1.Pod
+	for index, pod := range pods.Items {
+		if pod.GetName() == s.self.Name {
+			otherPods = append(pods.Items[:index], pods.Items[index+1:]...)
+		}
+	}
+
+	results := replicas.FromPods(otherPods)
+
+	logger.Debug("others found",
+		zap.Any("others", results))
+
+	return results, nil
 }

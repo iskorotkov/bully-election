@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	interval = time.Second
+	tickInterval = time.Second
 )
 
 func main() {
@@ -51,8 +51,23 @@ func main() {
 	commClient := comms.NewClient(logger.Named("client"))
 	defer commClient.Close()
 
-	sd, err := services.NewServiceDiscovery(namespace, time.Second*5, time.Millisecond*100,
-		commClient, logger.Named("service-discovery"))
+	sd, err := services.NewServiceDiscovery(services.Config{
+		Namespace: namespace,
+
+		// Timeouts.
+		PingTimeout:       time.Second * 5,
+		ElectionTimeout:   time.Second * 5,
+		LeadershipTimeout: time.Second * 5,
+		RefreshTimeout:    time.Second * 5,
+		SelfInfoTimeout:   time.Second * 5,
+
+		// Intervals.
+		RefreshInterval:  time.Millisecond * 100,
+		SelfInfoInverval: time.Millisecond * 100,
+
+		Client: commClient,
+		Logger: logger.Named("service-discovery"),
+	})
 	if err != nil {
 		logger.Fatal("couldn't create service dicovery",
 			zap.Error(err))
@@ -99,18 +114,18 @@ func main() {
 		select {
 		case msg := <-commServer.OnElection():
 			fsm.OnElection(msg.From)
-		case msg := <-commClient.OnAlive():
+		case msg := <-commClient.OnResponse():
 			fsm.OnAlive(msg.From)
 		case msg := <-commServer.OnVictory():
 			fsm.OnVictory(msg.From)
 		default:
-			err := fsm.Tick(interval)
+			err := fsm.Tick(tickInterval)
 			if err != nil {
 				logger.Error("error occurred during FSM tick",
 					zap.Error(err))
 			}
 
-			time.Sleep(interval)
+			time.Sleep(tickInterval)
 		}
 	}
 }

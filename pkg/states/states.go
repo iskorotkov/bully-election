@@ -266,6 +266,9 @@ func (s *elected) OnAlive(source replicas.Replica) State {
 }
 
 func (s *elected) OnVictory(source replicas.Replica) State {
+	s.logger.Warn("elected replica received victory message",
+		zap.Any("source", source))
+
 	return startElection(s.config)
 }
 

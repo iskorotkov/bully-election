@@ -123,7 +123,7 @@ func NewClient(logger *zap.Logger) *Client {
 	}
 }
 
-func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage) error {
+func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage, notify bool) error {
 	logger := c.logger.Named("send")
 	logger.Debug("starting sending message",
 		zap.Any("message", outgoing))
@@ -176,10 +176,29 @@ func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage) error {
 		return ErrFailed
 	}
 
+	b, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		logger.Error("couln't read response body",
+			zap.Error(err))
+		return err
+	}
+
+	var incoming IncomingMessage
+	if err := json.Unmarshal(b, &incoming); err != nil {
+		logger.Error("couldn't unmarshal response message",
+			zap.Any("request", message),
+			zap.Error(err))
+		return err
+	}
+
+	if notify {
+		c.aliveCh <- incoming
+	}
+
 	return nil
 }
 
-func (c *Client) OnAlive() <-chan IncomingMessage {
+func (c *Client) OnResponse() <-chan IncomingMessage {
 	return c.aliveCh
 }
 
