@@ -31,7 +31,7 @@ type ServiceDiscovery struct {
 	logger      *zap.Logger
 }
 
-func NewServiceDiscovery(ns string, timeout time.Duration,
+func NewServiceDiscovery(ns string, timeout time.Duration, selfInfoTimeout time.Duration,
 	client *comms.Client, logger *zap.Logger) (*ServiceDiscovery, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -66,9 +66,14 @@ func NewServiceDiscovery(ns string, timeout time.Duration,
 				zap.Error(err))
 			return nil, err
 		}
+
+		time.Sleep(selfInfoTimeout)
 	}
 
 	self := replicas.NewReplica(podInfo.GetName(), podInfo.Status.PodIP)
+
+	logger.Info("fetched info about self",
+		zap.Any("self", self))
 
 	return &ServiceDiscovery{
 		namespace:   ns,
@@ -225,6 +230,8 @@ func (s *ServiceDiscovery) others() ([]replicas.Replica, error) {
 		}
 
 		if pod.Status.PodIP == "" {
+			logger.Info("pod doesn't have assigned ip address",
+				zap.String("pod", pod.GetName()))
 			continue
 		}
 

@@ -51,8 +51,8 @@ func main() {
 	commClient := comms.NewClient(logger.Named("client"))
 	defer commClient.Close()
 
-	sd, err := services.NewServiceDiscovery(namespace, time.Second*5, commClient,
-		logger.Named("service-discovery"))
+	sd, err := services.NewServiceDiscovery(namespace, time.Second*5, time.Millisecond*100,
+		commClient, logger.Named("service-discovery"))
 	if err != nil {
 		logger.Fatal("couldn't create service dicovery",
 			zap.Error(err))

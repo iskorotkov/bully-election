@@ -266,8 +266,7 @@ func (s *elected) OnAlive(source replicas.Replica) State {
 }
 
 func (s *elected) OnVictory(source replicas.Replica) State {
-	s.config.ServiceDiscovery.RememberLeader(source)
-	return notElect(s.config)
+	return startElection(s.config)
 }
 
 // Waiting for election.
