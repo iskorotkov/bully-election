@@ -70,7 +70,7 @@ func (f *FSM) Tick(elapsed time.Duration) error {
 }
 
 func (f *FSM) OnElectionMessage(source replicas.Replica) {
-	f.logger.Debug("on election called",
+	f.logger.Debug("on election message",
 		zap.Any("source", source))
 
 	f.mu.Lock()
@@ -80,7 +80,7 @@ func (f *FSM) OnElectionMessage(source replicas.Replica) {
 }
 
 func (f *FSM) OnVictoryMessage(source replicas.Replica) {
-	f.logger.Debug("on victory called",
+	f.logger.Debug("on victory message",
 		zap.Any("source", source))
 
 	f.mu.Lock()
@@ -90,7 +90,7 @@ func (f *FSM) OnVictoryMessage(source replicas.Replica) {
 }
 
 func (f *FSM) OnAliveResponse(source replicas.Replica) {
-	f.logger.Debug("on alive called",
+	f.logger.Debug("on alive response",
 		zap.Any("source", source))
 
 	f.mu.Lock()
@@ -100,7 +100,7 @@ func (f *FSM) OnAliveResponse(source replicas.Replica) {
 }
 
 func (f *FSM) OnElectionResponse(source replicas.Replica) {
-	f.logger.Debug("on alive called",
+	f.logger.Debug("on election response",
 		zap.Any("source", source))
 
 	f.mu.Lock()
@@ -158,14 +158,14 @@ func (s *starting) OnVictoryMessage(source replicas.Replica) State {
 }
 
 func (s *starting) OnAliveResponse(source replicas.Replica) State {
-	s.logger.Warn("not expected alive response",
+	s.logger.Warn("unexpected alive response",
 		zap.Any("source", source))
 
 	return s
 }
 
 func (s *starting) OnElectionResponse(source replicas.Replica) State {
-	s.logger.Warn("not expected election response",
+	s.logger.Warn("unexpected election response",
 		zap.Any("source", source))
 
 	return s
@@ -218,14 +218,14 @@ func (s *startingElection) OnVictoryMessage(source replicas.Replica) State {
 }
 
 func (s *startingElection) OnAliveResponse(source replicas.Replica) State {
-	s.logger.Warn("not expected alive response",
+	s.logger.Warn("unexpected alive response",
 		zap.Any("source", source))
 
 	return s
 }
 
 func (s *startingElection) OnElectionResponse(source replicas.Replica) State {
-	s.logger.Warn("not expected election response",
+	s.logger.Warn("unexpected election response",
 		zap.Any("source", source))
 
 	return s
@@ -272,7 +272,7 @@ func (s *startedElection) OnVictoryMessage(source replicas.Replica) State {
 }
 
 func (s *startedElection) OnAliveResponse(source replicas.Replica) State {
-	s.logger.Warn("not expected alive response",
+	s.logger.Warn("unexpected alive response",
 		zap.Any("source", source))
 
 	return s
@@ -330,14 +330,14 @@ func (s *elected) OnVictoryMessage(source replicas.Replica) State {
 }
 
 func (s *elected) OnAliveResponse(source replicas.Replica) State {
-	s.logger.Warn("not expected alive response",
+	s.logger.Warn("unexpected alive response",
 		zap.Any("source", source))
 
 	return s
 }
 
 func (s *elected) OnElectionResponse(source replicas.Replica) State {
-	s.logger.Warn("not expected election response",
+	s.logger.Warn("unexpected election response",
 		zap.Any("source", source))
 
 	return s
@@ -384,14 +384,14 @@ func (s *waitingForElection) OnVictoryMessage(source replicas.Replica) State {
 }
 
 func (s *waitingForElection) OnAliveResponse(source replicas.Replica) State {
-	s.logger.Warn("not expected alive response",
+	s.logger.Warn("unexpected alive response",
 		zap.Any("source", source))
 
 	return s
 }
 
 func (s *waitingForElection) OnElectionResponse(source replicas.Replica) State {
-	s.logger.Warn("not expected election response",
+	s.logger.Warn("unexpected election response",
 		zap.Any("source", source))
 
 	return s
@@ -437,7 +437,7 @@ func (s *waitingToPing) OnElectionMessage(source replicas.Replica) State {
 }
 
 func (s *waitingToPing) OnVictoryMessage(source replicas.Replica) State {
-	s.logger.Warn("not expected victory message",
+	s.logger.Warn("unexpected victory message",
 		zap.Any("source", source))
 
 	s.config.ServiceDiscovery.RememberLeader(source)
@@ -445,14 +445,14 @@ func (s *waitingToPing) OnVictoryMessage(source replicas.Replica) State {
 }
 
 func (s *waitingToPing) OnAliveResponse(source replicas.Replica) State {
-	s.logger.Warn("not expected alive response",
+	s.logger.Warn("unexpected alive response",
 		zap.Any("source", source))
 
 	return s
 }
 
 func (s *waitingToPing) OnElectionResponse(source replicas.Replica) State {
-	s.logger.Warn("not expected election response",
+	s.logger.Warn("unexpected election response",
 		zap.Any("source", source))
 
 	return s
@@ -494,7 +494,7 @@ func (s *waitingForLeader) OnElectionMessage(source replicas.Replica) State {
 }
 
 func (s *waitingForLeader) OnVictoryMessage(source replicas.Replica) State {
-	s.logger.Warn("not expected victory message",
+	s.logger.Warn("unexpected victory message",
 		zap.Any("source", source))
 
 	s.config.ServiceDiscovery.RememberLeader(source)
@@ -506,7 +506,7 @@ func (s *waitingForLeader) OnAliveResponse(source replicas.Replica) State {
 }
 
 func (s *waitingForLeader) OnElectionResponse(source replicas.Replica) State {
-	s.logger.Warn("not expected election response",
+	s.logger.Warn("unexpected election response",
 		zap.Any("source", source))
 
 	return s
