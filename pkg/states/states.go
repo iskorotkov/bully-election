@@ -56,14 +56,14 @@ func (f *FSM) Tick(elapsed time.Duration) error {
 	f.logger.Debug("tick called",
 		zap.Duration("elapsed", elapsed))
 
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	state, err := f.state.Tick(elapsed)
 	if err != nil {
 		f.logger.Error("error occurred during FSM tick",
 			zap.Error(err))
 	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
 
 	f.state = state
 	return err

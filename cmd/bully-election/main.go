@@ -15,10 +15,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	tickInterval = time.Second
-)
-
 func main() {
 	var (
 		logger *zap.Logger
@@ -112,6 +108,18 @@ func main() {
 		}
 	}()
 
+	go func() {
+		tickInterval := time.Second * 5
+
+		err := fsm.Tick(tickInterval)
+		if err != nil {
+			logger.Error("error occurred during FSM tick",
+				zap.Error(err))
+		}
+
+		time.Sleep(tickInterval)
+	}()
+
 	for {
 		select {
 		case msg := <-commServer.OnElectionRequest():
@@ -122,14 +130,6 @@ func main() {
 			fsm.OnAliveResponse(msg.From)
 		case msg := <-commClient.OnElectionResponse():
 			fsm.OnElectionResponse(msg.From)
-		default:
-			err := fsm.Tick(tickInterval)
-			if err != nil {
-				logger.Error("error occurred during FSM tick",
-					zap.Error(err))
-			}
-
-			time.Sleep(tickInterval)
 		}
 	}
 }

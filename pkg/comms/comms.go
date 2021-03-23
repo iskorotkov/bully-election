@@ -39,8 +39,7 @@ func NewServer(logger *zap.Logger) *Server {
 
 func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 	logger := s.logger.Named("handler")
-	logger.Debug("incoming request",
-		zap.Any("header", r.Header))
+	logger.Debug("incoming request")
 
 	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {

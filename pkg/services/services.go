@@ -184,6 +184,7 @@ func (s *ServiceDiscovery) PingLeader() error {
 	}
 
 	request := comms.Request{
+		From:    s.self,
 		Message: messages.MessageAlive,
 	}
 
@@ -235,13 +236,15 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 
 			if pod.IP == "" {
 				logger.Warn("receiver doesn't have assigned IP address",
-					zap.Any("message", request))
+					zap.Any("message", request),
+					zap.Any("pod", pod))
 				return
 			}
 
 			if err := s.client.Send(ctx, request, pod); err != nil {
 				logger.Error("couldn't send victory message",
 					zap.Any("message", request),
+					zap.Any("pod", pod),
 					zap.Error(err))
 			}
 		}()
@@ -268,6 +271,7 @@ func (s *ServiceDiscovery) StartElection() error {
 	for _, pl := range potentialLeaders {
 		pl := pl
 		request := comms.Request{
+			From:    s.self,
 			Message: messages.MessageElection,
 		}
 
@@ -276,14 +280,17 @@ func (s *ServiceDiscovery) StartElection() error {
 
 			if pl.IP == "" {
 				logger.Warn("receiver doesn't have assigned IP address",
-					zap.Any("message", request))
+					zap.Any("message", request),
+					zap.Any("receiver", pl))
 				return
 			}
 
 			if err := s.client.Send(ctx, request, pl); err != nil {
 				logger.Error("couldn't send election message",
 					zap.Any("message", request),
+					zap.Any("receiver", pl),
 					zap.Error(err))
+				return
 			}
 		}()
 	}
