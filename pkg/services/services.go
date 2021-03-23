@@ -183,7 +183,10 @@ func (s *ServiceDiscovery) PingLeader() error {
 		return ErrNoLeader
 	}
 
-	msg := comms.NewOutgoingMessage(s.self, s.leader, messages.MessageAlive)
+	msg := comms.OutgoingMessage{
+		To:      s.leader,
+		Message: messages.MessageAlive,
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
 	defer cancel()
@@ -220,7 +223,11 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 	defer cancel()
 
 	for _, pod := range others {
-		msg := comms.NewOutgoingMessage(s.self, pod, messages.MessageVictory)
+		msg := comms.OutgoingMessage{
+			From:    s.self,
+			To:      pod,
+			Message: messages.MessageVictory,
+		}
 
 		go func() {
 			defer wg.Done()
@@ -258,7 +265,10 @@ func (s *ServiceDiscovery) StartElection() error {
 	defer cancel()
 
 	for _, pl := range potentialLeaders {
-		msg := comms.NewOutgoingMessage(s.self, pl, messages.MessageElection)
+		msg := comms.OutgoingMessage{
+			To:      pl,
+			Message: messages.MessageElection,
+		}
 
 		go func() {
 			defer wg.Done()

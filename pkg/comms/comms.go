@@ -19,7 +19,7 @@ var (
 )
 
 type IncomingMessage struct {
-	From    replicas.Replica `json:"from"`
+	From    replicas.Replica `json:"from,omitempty"`
 	Message messages.Message `json:"message"`
 }
 
@@ -27,14 +27,6 @@ type OutgoingMessage struct {
 	From    replicas.Replica
 	To      replicas.Replica
 	Message messages.Message
-}
-
-func NewOutgoingMessage(from replicas.Replica, to replicas.Replica, msg messages.Message) OutgoingMessage {
-	return OutgoingMessage{
-		From:    from,
-		To:      to,
-		Message: msg,
-	}
 }
 
 type Server struct {
@@ -77,7 +69,9 @@ func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 	logger.Debug("incoming message received and processed",
 		zap.Any("message", msg))
 
-	fmt.Fprint(rw, messages.MessageConfirm)
+	fmt.Fprint(rw, IncomingMessage{
+		Message: messages.MessageConfirm,
+	})
 
 	switch msg.Message {
 	case messages.MessageElection:
@@ -160,7 +154,7 @@ func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage) error {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		logger.Error("couldn't execute request",
-			zap.Any("request", req),
+			zap.Any("message", outgoing),
 			zap.Any("context", ctx),
 			zap.Error(err))
 		return err
@@ -185,29 +179,29 @@ func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage) error {
 		return err
 	}
 
-	var incoming IncomingMessage
-	if err := json.Unmarshal(b, &incoming); err != nil {
+	var msg IncomingMessage
+	if err := json.Unmarshal(b, &msg); err != nil {
 		logger.Error("couldn't unmarshal response message",
 			zap.Any("request", message),
 			zap.Error(err))
 		return err
 	}
 
-	logger.Debug("response received",
-		zap.Any("response", incoming))
+	logger.Debug("response message received",
+		zap.Any("message", msg))
 
 	switch outgoing.Message {
 	case messages.MessageAlive:
 		logger.Debug("alive response received",
-			zap.Any("message", incoming))
-		c.aliveResponseCh <- incoming
+			zap.Any("message", msg))
+		c.aliveResponseCh <- msg
 	case messages.MessageElection:
 		logger.Debug("election response received",
-			zap.Any("message", incoming))
-		c.electionResponseCh <- incoming
+			zap.Any("message", msg))
+		c.electionResponseCh <- msg
 	case messages.MessageVictory:
 		logger.Debug("victory response received",
-			zap.Any("message", incoming))
+			zap.Any("message", msg))
 	}
 
 	return nil
