@@ -62,8 +62,8 @@ func main() {
 		SelfInfoTimeout:   time.Second * 5,
 
 		// Intervals.
-		RefreshInterval:  time.Millisecond * 100,
-		SelfInfoInverval: time.Millisecond * 100,
+		RefreshInterval:  time.Second * 5,
+		SelfInfoInverval: time.Second,
 
 		Client: commClient,
 		Logger: logger.Named("service-discovery"),
