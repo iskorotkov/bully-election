@@ -183,8 +183,7 @@ func (s *ServiceDiscovery) PingLeader() error {
 		return ErrNoLeader
 	}
 
-	msg := comms.OutgoingMessage{
-		To:      s.leader,
+	request := comms.Request{
 		Message: messages.MessageAlive,
 	}
 
@@ -192,9 +191,9 @@ func (s *ServiceDiscovery) PingLeader() error {
 	defer cancel()
 
 	go func() {
-		if err := s.client.Send(ctx, msg); err != nil {
+		if err := s.client.Send(ctx, request, s.leader); err != nil {
 			logger.Error("couldn't send message",
-				zap.Any("message", msg),
+				zap.Any("message", request),
 				zap.Error(err))
 			return
 		}
@@ -225,24 +224,24 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 	defer cancel()
 
 	for _, pod := range others {
-		msg := comms.OutgoingMessage{
+		pod := pod
+		request := comms.Request{
 			From:    s.self,
-			To:      pod,
 			Message: messages.MessageVictory,
 		}
 
 		go func() {
 			defer wg.Done()
 
-			if msg.To.IP == "" {
+			if pod.IP == "" {
 				logger.Warn("receiver doesn't have assigned IP address",
-					zap.Any("message", msg))
+					zap.Any("message", request))
 				return
 			}
 
-			if err := s.client.Send(ctx, msg); err != nil {
+			if err := s.client.Send(ctx, request, pod); err != nil {
 				logger.Error("couldn't send victory message",
-					zap.Any("message", msg),
+					zap.Any("message", request),
 					zap.Error(err))
 			}
 		}()
@@ -267,23 +266,23 @@ func (s *ServiceDiscovery) StartElection() error {
 	defer cancel()
 
 	for _, pl := range potentialLeaders {
-		msg := comms.OutgoingMessage{
-			To:      pl,
+		pl := pl
+		request := comms.Request{
 			Message: messages.MessageElection,
 		}
 
 		go func() {
 			defer wg.Done()
 
-			if msg.To.IP == "" {
+			if pl.IP == "" {
 				logger.Warn("receiver doesn't have assigned IP address",
-					zap.Any("message", msg))
+					zap.Any("message", request))
 				return
 			}
 
-			if err := s.client.Send(ctx, msg); err != nil {
+			if err := s.client.Send(ctx, request, pl); err != nil {
 				logger.Error("couldn't send election message",
-					zap.Any("message", msg),
+					zap.Any("message", request),
 					zap.Error(err))
 			}
 		}()

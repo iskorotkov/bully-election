@@ -18,27 +18,21 @@ var (
 	ErrFailed = errors.New("request send failed")
 )
 
-type IncomingMessage struct {
+type Request struct {
 	From    replicas.Replica `json:"from,omitempty"`
 	Message messages.Message `json:"message"`
 }
 
-type OutgoingMessage struct {
-	From    replicas.Replica
-	To      replicas.Replica
-	Message messages.Message
-}
-
 type Server struct {
-	electionCh chan IncomingMessage
-	victoryCh  chan IncomingMessage
+	electionCh chan Request
+	victoryCh  chan Request
 	logger     *zap.Logger
 }
 
 func NewServer(logger *zap.Logger) *Server {
 	return &Server{
-		electionCh: make(chan IncomingMessage),
-		victoryCh:  make(chan IncomingMessage),
+		electionCh: make(chan Request),
+		victoryCh:  make(chan Request),
 		logger:     logger,
 	}
 }
@@ -57,8 +51,8 @@ func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var msg IncomingMessage
-	if err := json.Unmarshal(b, &msg); err != nil {
+	var request Request
+	if err := json.Unmarshal(b, &request); err != nil {
 		msg := "couldn't unmarshal request body"
 		logger.Error(msg,
 			zap.ByteString("request", b),
@@ -68,35 +62,46 @@ func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Debug("incoming message received and processed",
-		zap.Any("message", msg))
+		zap.Any("message", request))
 
-	fmt.Fprint(rw, IncomingMessage{
+	response := Request{
 		Message: messages.MessageConfirm,
-	})
+	}
 
-	switch msg.Message {
+	b, err = json.Marshal(response)
+	if err != nil {
+		msg := "couldn't marshal response body"
+		logger.Error(msg,
+			zap.Any("response", response),
+			zap.Error(err))
+		return
+	}
+
+	fmt.Fprint(rw, string(b))
+
+	switch request.Message {
 	case messages.MessageElection:
 		logger.Debug("election request received",
-			zap.Any("message", msg))
-		s.electionCh <- msg
+			zap.Any("message", request))
+		s.electionCh <- request
 	case messages.MessageVictory:
 		logger.Debug("victory message received",
-			zap.Any("message", msg))
-		s.victoryCh <- msg
+			zap.Any("message", request))
+		s.victoryCh <- request
 	case messages.MessageAlive:
 		logger.Debug("alive check received",
-			zap.Any("message", msg))
+			zap.Any("message", request))
 	default:
 		logger.Error("unknown message type",
-			zap.Any("message", msg))
+			zap.Any("message", request))
 	}
 }
 
-func (s *Server) OnElectionRequest() <-chan IncomingMessage {
+func (s *Server) OnElectionRequest() <-chan Request {
 	return s.electionCh
 }
 
-func (s *Server) OnVictoryRequest() <-chan IncomingMessage {
+func (s *Server) OnVictoryRequest() <-chan Request {
 	return s.victoryCh
 }
 
@@ -107,47 +112,46 @@ func (s *Server) Close() {
 }
 
 type Client struct {
-	aliveResponseCh    chan IncomingMessage
-	electionResponseCh chan IncomingMessage
+	aliveResponseCh    chan Request
+	electionResponseCh chan Request
 	logger             *zap.Logger
 }
 
 func NewClient(logger *zap.Logger) *Client {
 	return &Client{
-		aliveResponseCh:    make(chan IncomingMessage),
-		electionResponseCh: make(chan IncomingMessage),
+		aliveResponseCh:    make(chan Request),
+		electionResponseCh: make(chan Request),
 		logger:             logger,
 	}
 }
 
-func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage) error {
+func (c *Client) Send(ctx context.Context, request Request, to replicas.Replica) error {
 	logger := c.logger.Named("send")
 	logger.Debug("starting sending message",
-		zap.Any("message", outgoing))
+		zap.Any("request", request),
+		zap.Any("to", to))
 
-	message := IncomingMessage{
-		From:    outgoing.From,
-		Message: outgoing.Message,
-	}
-
-	b, err := json.Marshal(message)
+	b, err := json.Marshal(request)
 	if err != nil {
 		logger.Error("couldn't marshal message content",
-			zap.Any("message", outgoing),
+			zap.Any("request", request),
+			zap.Any("to", to),
 			zap.Error(err))
 		return err
 	}
 
-	url := fmt.Sprintf("http://%s", outgoing.To.IP)
+	url := fmt.Sprintf("http://%s", to.IP)
 
 	logger.Debug("sending message to url",
-		zap.Any("message", outgoing),
+		zap.Any("request", request),
+		zap.Any("to", to),
 		zap.String("url", url))
 
 	req, err := http.NewRequestWithContext(ctx, "post", url, bytes.NewReader(b))
 	if err != nil {
 		logger.Error("couldn't create request",
-			zap.Any("message", outgoing),
+			zap.Any("request", request),
+			zap.Any("to", to),
 			zap.Error(err))
 		return err
 	}
@@ -155,8 +159,8 @@ func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage) error {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		logger.Error("couldn't execute request",
-			zap.Any("message", outgoing),
-			zap.Any("context", ctx),
+			zap.Any("request", request),
+			zap.Any("to", to),
 			zap.Error(err))
 		return err
 	}
@@ -180,40 +184,40 @@ func (c *Client) Send(ctx context.Context, outgoing OutgoingMessage) error {
 		return err
 	}
 
-	var msg IncomingMessage
-	if err := json.Unmarshal(b, &msg); err != nil {
+	var response Request
+	if err := json.Unmarshal(b, &response); err != nil {
 		logger.Error("couldn't unmarshal response message",
-			zap.Any("request", message),
+			zap.Any("request", request),
 			zap.ByteString("response", b),
 			zap.Error(err))
 		return err
 	}
 
 	logger.Debug("response message received",
-		zap.Any("message", msg))
+		zap.Any("response", response))
 
-	switch outgoing.Message {
+	switch request.Message {
 	case messages.MessageAlive:
 		logger.Debug("alive response received",
-			zap.Any("message", msg))
-		c.aliveResponseCh <- msg
+			zap.Any("message", response))
+		c.aliveResponseCh <- response
 	case messages.MessageElection:
 		logger.Debug("election response received",
-			zap.Any("message", msg))
-		c.electionResponseCh <- msg
+			zap.Any("message", response))
+		c.electionResponseCh <- response
 	case messages.MessageVictory:
 		logger.Debug("victory response received",
-			zap.Any("message", msg))
+			zap.Any("message", response))
 	}
 
 	return nil
 }
 
-func (c *Client) OnAliveResponse() <-chan IncomingMessage {
+func (c *Client) OnAliveResponse() <-chan Request {
 	return c.aliveResponseCh
 }
 
-func (c *Client) OnElectionResponse() <-chan IncomingMessage {
+func (c *Client) OnElectionResponse() <-chan Request {
 	return c.electionResponseCh
 }
 
