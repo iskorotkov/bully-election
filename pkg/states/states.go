@@ -112,6 +112,8 @@ func (f *FSM) State() State {
 // Starting election.
 
 func startElection(config Config) State {
+	config.Logger.Debug("start election")
+
 	if config.ServiceDiscovery.MustBeLeader() {
 		return elect(config)
 	}
