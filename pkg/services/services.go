@@ -188,10 +188,10 @@ func (s *ServiceDiscovery) PingLeader() error {
 		Message: messages.MessageAlive,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
-	defer cancel()
-
 	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
+		defer cancel()
+
 		if err := s.client.Send(ctx, request, s.leader); err != nil {
 			logger.Error("couldn't send message",
 				zap.Any("message", request),
@@ -218,9 +218,6 @@ func (s *ServiceDiscovery) AnnounceLeadership() {
 
 	others := s.OthersSnapshot()
 
-	ctx, cancel := context.WithTimeout(context.Background(), s.leadershipTimeout)
-	defer cancel()
-
 	for _, pod := range others {
 		pod := pod
 		request := comms.Request{
@@ -229,6 +226,9 @@ func (s *ServiceDiscovery) AnnounceLeadership() {
 		}
 
 		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), s.leadershipTimeout)
+			defer cancel()
+
 			if pod.IP == "" {
 				logger.Warn("receiver doesn't have assigned IP address",
 					zap.Any("message", request),
@@ -255,9 +255,6 @@ func (s *ServiceDiscovery) StartElection() {
 
 	potentialLeaders := s.PotentialLeadersSnapshot()
 
-	ctx, cancel := context.WithTimeout(context.Background(), s.electionTimeout)
-	defer cancel()
-
 	for _, pl := range potentialLeaders {
 		pl := pl
 		request := comms.Request{
@@ -266,6 +263,9 @@ func (s *ServiceDiscovery) StartElection() {
 		}
 
 		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), s.electionTimeout)
+			defer cancel()
+
 			if pl.IP == "" {
 				logger.Warn("receiver doesn't have assigned IP address",
 					zap.Any("message", request),
