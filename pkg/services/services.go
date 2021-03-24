@@ -218,9 +218,6 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 
 	others := s.OthersSnapshot()
 
-	wg := sync.WaitGroup{}
-	wg.Add(len(others))
-
 	ctx, cancel := context.WithTimeout(context.Background(), s.leadershipTimeout)
 	defer cancel()
 
@@ -232,8 +229,6 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 		}
 
 		go func() {
-			defer wg.Done()
-
 			if pod.IP == "" {
 				logger.Warn("receiver doesn't have assigned IP address",
 					zap.Any("message", request),
@@ -246,11 +241,11 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 					zap.Any("message", request),
 					zap.Any("pod", pod),
 					zap.Error(err))
+				return
 			}
 		}()
 	}
 
-	wg.Wait()
 	logger.Info("leadership announced")
 
 	return nil
@@ -261,9 +256,6 @@ func (s *ServiceDiscovery) StartElection() error {
 	logger.Info("election started")
 
 	potentialLeaders := s.PotentialLeadersSnapshot()
-
-	wg := sync.WaitGroup{}
-	wg.Add(len(potentialLeaders))
 
 	ctx, cancel := context.WithTimeout(context.Background(), s.electionTimeout)
 	defer cancel()
@@ -276,8 +268,6 @@ func (s *ServiceDiscovery) StartElection() error {
 		}
 
 		go func() {
-			defer wg.Done()
-
 			if pl.IP == "" {
 				logger.Warn("receiver doesn't have assigned IP address",
 					zap.Any("message", request),
@@ -295,7 +285,6 @@ func (s *ServiceDiscovery) StartElection() error {
 		}()
 	}
 
-	wg.Wait()
 	logger.Info("election finished")
 
 	return nil

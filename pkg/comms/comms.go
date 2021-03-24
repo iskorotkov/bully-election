@@ -82,11 +82,19 @@ func (s *Server) Handle(rw http.ResponseWriter, r *http.Request) {
 	case messages.MessageElection:
 		logger.Debug("election request received",
 			zap.Any("message", request))
+
 		s.electionCh <- request
+
+		logger.Debug("election request pushed to channel",
+			zap.Any("message", request))
 	case messages.MessageVictory:
 		logger.Debug("victory message received",
 			zap.Any("message", request))
+
 		s.victoryCh <- request
+
+		logger.Debug("victory message pushed to channel",
+			zap.Any("message", request))
 	case messages.MessageAlive:
 		logger.Debug("alive check received",
 			zap.Any("message", request))
@@ -199,11 +207,19 @@ func (c *Client) Send(ctx context.Context, request Request, to replicas.Replica)
 	case messages.MessageAlive:
 		logger.Debug("alive response received",
 			zap.Any("message", response))
+
 		c.aliveResponseCh <- response
+
+		logger.Debug("alive response pushed to channel",
+			zap.Any("message", response))
 	case messages.MessageElection:
 		logger.Debug("election response received",
 			zap.Any("message", response))
+
 		c.electionResponseCh <- response
+
+		logger.Debug("election response pushed to channel",
+			zap.Any("message", response))
 	case messages.MessageVictory:
 		logger.Debug("victory response received",
 			zap.Any("message", response))
