@@ -30,7 +30,12 @@ func main() {
 		log.Fatalf("couldn't create logger: %v", err)
 	}
 
-	defer logger.Sync()
+	defer func(logger *zap.Logger) {
+		err := logger.Sync()
+		if err != nil {
+			log.Fatalf("couldn't sync logger: %v", err)
+		}
+	}(logger)
 
 	defer func() {
 		if p := recover(); p != nil {
@@ -65,7 +70,7 @@ func main() {
 		Logger: logger.Named("service-discovery"),
 	})
 	if err != nil {
-		logger.Fatal("couldn't create service dicovery",
+		logger.Fatal("couldn't create service discovery",
 			zap.Error(err))
 	}
 
