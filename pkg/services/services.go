@@ -203,14 +203,14 @@ func (s *ServiceDiscovery) PingLeader() error {
 	return nil
 }
 
-func (s *ServiceDiscovery) MustBeLeader() (bool, error) {
+func (s *ServiceDiscovery) MustBeLeader() bool {
 	s.logger.Info("check if must become a leader")
 
 	potentialLeaders := s.PotentialLeadersSnapshot()
-	return len(potentialLeaders) == 0, nil
+	return len(potentialLeaders) == 0
 }
 
-func (s *ServiceDiscovery) AnnounceLeadership() error {
+func (s *ServiceDiscovery) AnnounceLeadership() {
 	logger := s.logger.Named("announce-leadership")
 	logger.Info("start announcement")
 
@@ -247,11 +247,9 @@ func (s *ServiceDiscovery) AnnounceLeadership() error {
 	}
 
 	logger.Info("leadership announced")
-
-	return nil
 }
 
-func (s *ServiceDiscovery) StartElection() error {
+func (s *ServiceDiscovery) StartElection() {
 	logger := s.logger.Named("start-election")
 	logger.Info("election started")
 
@@ -286,8 +284,6 @@ func (s *ServiceDiscovery) StartElection() error {
 	}
 
 	logger.Info("election finished")
-
-	return nil
 }
 
 func (s *ServiceDiscovery) Self() replicas.Replica {

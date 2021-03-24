@@ -115,15 +115,12 @@ func main() {
 	}()
 
 	go func() {
-		tickInterval := time.Second * 5
+		for {
+			tickInterval := time.Second * 5
 
-		err := fsm.Tick(tickInterval)
-		if err != nil {
-			logger.Error("error occurred during FSM tick",
-				zap.Error(err))
+			fsm.Tick(tickInterval)
+			time.Sleep(tickInterval)
 		}
-
-		time.Sleep(tickInterval)
 	}()
 
 	for {

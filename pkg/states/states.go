@@ -18,7 +18,7 @@ var (
 )
 
 type State interface {
-	Tick(elapsed time.Duration) (State, error)
+	Tick(elapsed time.Duration) State
 	OnElectionMessage(source replicas.Replica) State
 	OnVictoryMessage(source replicas.Replica) State
 	OnAliveResponse(source replicas.Replica) State
@@ -52,21 +52,14 @@ func NewFSM(config Config) *FSM {
 	}
 }
 
-func (f *FSM) Tick(elapsed time.Duration) error {
+func (f *FSM) Tick(elapsed time.Duration) {
 	f.logger.Debug("tick called",
 		zap.Duration("elapsed", elapsed))
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	state, err := f.state.Tick(elapsed)
-	if err != nil {
-		f.logger.Error("error occurred during FSM tick",
-			zap.Error(err))
-	}
-
-	f.state = state
-	return err
+	f.state = f.state.Tick(elapsed)
 }
 
 func (f *FSM) OnElectionMessage(source replicas.Replica) {
@@ -132,21 +125,14 @@ type starting struct {
 	logger *zap.Logger
 }
 
-func (s *starting) Tick(elapsed time.Duration) (State, error) {
-	isLeader, err := s.config.ServiceDiscovery.MustBeLeader()
-	if err != nil {
-		return s, err
+func (s *starting) Tick(elapsed time.Duration) State {
+	if s.config.ServiceDiscovery.MustBeLeader() {
+		return elect(s.config)
 	}
 
-	if isLeader {
-		return elect(s.config), nil
-	}
+	s.config.ServiceDiscovery.StartElection()
 
-	if err := s.config.ServiceDiscovery.StartElection(); err != nil {
-		return s, err
-	}
-
-	return onElectionStarted(s.config), nil
+	return onElectionStarted(s.config)
 }
 
 func (s *starting) OnElectionMessage(source replicas.Replica) State {
@@ -191,21 +177,14 @@ type startingElection struct {
 	logger *zap.Logger
 }
 
-func (s *startingElection) Tick(elapsed time.Duration) (State, error) {
-	ok, err := s.config.ServiceDiscovery.MustBeLeader()
-	if err != nil {
-		return s, err
+func (s *startingElection) Tick(elapsed time.Duration) State {
+	if s.config.ServiceDiscovery.MustBeLeader() {
+		return elect(s.config)
 	}
 
-	if ok {
-		return elect(s.config), nil
-	}
+	s.config.ServiceDiscovery.StartElection()
 
-	if err := s.config.ServiceDiscovery.StartElection(); err != nil {
-		return s, err
-	}
-
-	return onElectionStarted(s.config), nil
+	return onElectionStarted(s.config)
 }
 
 func (s *startingElection) OnElectionMessage(source replicas.Replica) State {
@@ -253,13 +232,13 @@ type startedElection struct {
 	logger  *zap.Logger
 }
 
-func (s *startedElection) Tick(elapsed time.Duration) (State, error) {
+func (s *startedElection) Tick(elapsed time.Duration) State {
 	s.elapsed -= elapsed
 	if s.elapsed <= 0 {
-		return elect(s.config), nil
+		return elect(s.config)
 	}
 
-	return s, nil
+	return s
 }
 
 func (s *startedElection) OnElectionMessage(source replicas.Replica) State {
@@ -304,18 +283,13 @@ type elected struct {
 	logger    *zap.Logger
 }
 
-func (s *elected) Tick(elapsed time.Duration) (State, error) {
+func (s *elected) Tick(elapsed time.Duration) State {
 	if !s.announced {
-		if err := s.config.ServiceDiscovery.AnnounceLeadership(); err != nil {
-			s.logger.Error("couldn't announce leadership",
-				zap.Error(err))
-			return s, err
-		}
-
+		s.config.ServiceDiscovery.AnnounceLeadership()
 		s.announced = true
 	}
 
-	return s, nil
+	return s
 }
 
 func (s *elected) OnElectionMessage(source replicas.Replica) State {
@@ -365,13 +339,13 @@ type waitingForElection struct {
 	logger  *zap.Logger
 }
 
-func (s *waitingForElection) Tick(elapsed time.Duration) (State, error) {
+func (s *waitingForElection) Tick(elapsed time.Duration) State {
 	s.elapsed -= elapsed
 	if s.elapsed <= 0 {
-		return startElection(s.config), nil
+		return startElection(s.config)
 	}
 
-	return s, nil
+	return s
 }
 
 func (s *waitingForElection) OnElectionMessage(source replicas.Replica) State {
@@ -419,17 +393,17 @@ type waitingToPing struct {
 	logger   *zap.Logger
 }
 
-func (s *waitingToPing) Tick(elapsed time.Duration) (State, error) {
+func (s *waitingToPing) Tick(elapsed time.Duration) State {
 	s.interval -= elapsed
 	if s.interval <= 0 {
 		if err := s.config.ServiceDiscovery.PingLeader(); err != nil {
-			return startElection(s.config), err
+			return startElection(s.config)
 		}
 
-		return waitForLeader(s.config), nil
+		return waitForLeader(s.config)
 	}
 
-	return s, nil
+	return s
 }
 
 func (s *waitingToPing) OnElectionMessage(source replicas.Replica) State {
@@ -480,13 +454,13 @@ type waitingForLeader struct {
 	logger  *zap.Logger
 }
 
-func (s *waitingForLeader) Tick(elapsed time.Duration) (State, error) {
+func (s *waitingForLeader) Tick(elapsed time.Duration) State {
 	s.timeout -= elapsed
 	if s.timeout <= 0 {
-		return startElection(s.config), nil
+		return startElection(s.config)
 	}
 
-	return s, nil
+	return s
 }
 
 func (s *waitingForLeader) OnElectionMessage(source replicas.Replica) State {
