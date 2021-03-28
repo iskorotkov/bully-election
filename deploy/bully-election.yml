@@ -2,6 +2,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: bully-election
+  labels:
+    app: bully-election
+  annotations:
+    litmuschaos.io/chaos: "true"
 spec:
   replicas: 5
   selector:
@@ -11,6 +15,8 @@ spec:
     metadata:
       labels:
         app: bully-election
+      annotations:
+        litmuschaos.io/chaos: "true"
     spec:
       serviceAccountName: bully-election
       containers:
