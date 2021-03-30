@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/caarlos0/env/v6"
 	"github.com/iskorotkov/bully-election/pkg/comms"
 	"github.com/iskorotkov/bully-election/pkg/metrics"
 	"github.com/iskorotkov/bully-election/pkg/services"
@@ -18,12 +19,43 @@ import (
 	"go.uber.org/zap"
 )
 
+type config struct {
+	Development         bool   `env:"DEVELOPMENT" envDefault:"false"`
+	KubernetesNamespace string `env:"KUBERNETES_NAMESPACE,required"`
+
+	// Timeouts.
+	PingTimeout       time.Duration `env:"PING_TIMEOUT" envDefault:"5s"`
+	ElectionTimeout   time.Duration `env:"ELECTION_TIMEOUT" envDefault:"5s"`
+	LeadershipTimeout time.Duration `env:"LEADERSHIP_TIMEOUT" envDefault:"5s"`
+	RefreshTimeout    time.Duration `env:"REFRESH_TIMEOUT" envDefault:"5s"`
+	SelfInfoTimeout   time.Duration `env:"SELF_INFO_TIMEOUT" envDefault:"5s"`
+	ShutdownTimeout   time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"5s"`
+
+	// Intervals.
+	RefreshInterval  time.Duration `env:"REFRESH_INTERVAL" envDefault:"5s"`
+	SelfInfoInverval time.Duration `env:"SELF_INFO_INTERVAL" envDefault:"5s"`
+	TickInterval     time.Duration `env:"TICK_INTERVAL" envDefault:"5s"`
+
+	// FSM.
+	WaitBeforeAutoElection time.Duration `env:"WAIT_BEFORE_AUTO_ELECTION" envDefault:"5s"`
+	WaitForOtherElection   time.Duration `env:"WAIT_FOR_OTHER_ELECTION" envDefault:"5s"`
+	WaitForLeaderResponse  time.Duration `env:"WAIT_FOR_LEADER_RESPONSE" envDefault:"5s"`
+	WaitBeforeNextPing     time.Duration `env:"WAIT_BEFORE_NEXT_PING" envDefault:"5s"`
+}
+
 func main() {
+	cfg := config{}
+	if err := env.Parse(&cfg); err != nil {
+		log.Fatalf("couldn't parse env vars: %v", err)
+	}
+
+	log.Printf("using the configuration: %+v", cfg)
+
 	var (
 		logger *zap.Logger
 		err    error
 	)
-	if os.Getenv("DEVELOPMENT") != "" {
+	if cfg.Development {
 		logger, err = zap.NewDevelopment()
 	} else {
 		logger, err = zap.NewProduction()
@@ -47,27 +79,22 @@ func main() {
 		}
 	}()
 
-	namespace := os.Getenv("KUBERNETES_NAMESPACE")
-	if namespace == "" {
-		logger.Fatal("kubernetes namespace wasn't set")
-	}
-
 	commClient := comms.NewClient(logger.Named("client"))
 	defer commClient.Close()
 
 	sd, err := services.NewServiceDiscovery(services.Config{
-		Namespace: namespace,
+		Namespace: cfg.KubernetesNamespace,
 
 		// Timeouts.
-		PingTimeout:       time.Second * 5,
-		ElectionTimeout:   time.Second * 5,
-		LeadershipTimeout: time.Second * 5,
-		RefreshTimeout:    time.Second * 5,
-		SelfInfoTimeout:   time.Second * 5,
+		PingTimeout:       cfg.PingTimeout,
+		ElectionTimeout:   cfg.ElectionTimeout,
+		LeadershipTimeout: cfg.LeadershipTimeout,
+		RefreshTimeout:    cfg.RefreshTimeout,
+		SelfInfoTimeout:   cfg.SelfInfoTimeout,
 
 		// Intervals.
-		RefreshInterval:  time.Second * 5,
-		SelfInfoInverval: time.Second,
+		RefreshInterval:  cfg.RefreshInterval,
+		SelfInfoInverval: cfg.SelfInfoInverval,
 
 		Client: commClient,
 		Logger: logger.Named("service-discovery"),
@@ -78,10 +105,10 @@ func main() {
 	}
 
 	fsm := states.NewFSM(states.Config{
-		WaitBeforeAutoElection: time.Second * 5,
-		WaitForOtherElection:   time.Second * 5,
-		WaitForLeaderResponse:  time.Second * 5,
-		WaitBeforeNextPing:     time.Second * 5,
+		WaitBeforeAutoElection: cfg.WaitBeforeAutoElection,
+		WaitForOtherElection:   cfg.WaitForOtherElection,
+		WaitForLeaderResponse:  cfg.WaitForLeaderResponse,
+		WaitBeforeNextPing:     cfg.WaitBeforeNextPing,
 		ServiceDiscovery:       sd,
 		Logger:                 logger.Named("fsm"),
 	})
@@ -108,7 +135,7 @@ func main() {
 
 	go func() {
 		for {
-			tickInterval := time.Second * 5
+			tickInterval := cfg.TickInterval
 
 			fsm.Tick(tickInterval)
 			time.Sleep(tickInterval)
@@ -135,7 +162,7 @@ func main() {
 
 	<-done
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {

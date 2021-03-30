@@ -1,3 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bully-election
+data:
+  DEVELOPMENT: "true"
+  PING_TIMEOUT: 5s
+  ELECTION_TIMEOUT: 5s
+  LEADERSHIP_TIMEOUT: 5s
+  REFRESH_TIMEOUT: 5s
+  SELF_INFO_TIMEOUT: 5s
+  SHUTDOWN_TIMEOUT: 5s
+  REFRESH_INTERVAL: 5s
+  SELF_INFO_INTERVAL: 5s
+  TICK_INTERVAL: 5s
+  WAIT_BEFORE_AUTO_ELECTION: 5s
+  WAIT_FOR_OTHER_ELECTION: 5s
+  WAIT_FOR_LEADER_RESPONSE: 5s
+  WAIT_BEFORE_NEXT_PING: 5s
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,7 +41,7 @@ spec:
       serviceAccountName: bully-election
       containers:
         - name: bully-election
-          image: iskorotkov/bully-election:v1.0.1
+          image: iskorotkov/bully-election:v1.1.0
           resources:
             limits:
               memory: "64Mi"
@@ -34,7 +54,75 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: DEVELOPMENT
-              value: "1"
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: DEVELOPMENT
+            - name: PING_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: PING_TIMEOUT
+            - name: ELECTION_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: ELECTION_TIMEOUT
+            - name: LEADERSHIP_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: LEADERSHIP_TIMEOUT
+            - name: REFRESH_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: REFRESH_TIMEOUT
+            - name: SELF_INFO_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: SELF_INFO_TIMEOUT
+            - name: SHUTDOWN_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: SHUTDOWN_TIMEOUT
+            - name: REFRESH_INTERVAL
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: REFRESH_INTERVAL
+            - name: SELF_INFO_INTERVAL
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: SELF_INFO_INTERVAL
+            - name: TICK_INTERVAL
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: TICK_INTERVAL
+            - name: WAIT_BEFORE_AUTO_ELECTION
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: WAIT_BEFORE_AUTO_ELECTION
+            - name: WAIT_FOR_OTHER_ELECTION
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: WAIT_FOR_OTHER_ELECTION
+            - name: WAIT_FOR_LEADER_RESPONSE
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: WAIT_FOR_LEADER_RESPONSE
+            - name: WAIT_BEFORE_NEXT_PING
+              valueFrom:
+                configMapKeyRef:
+                  name: bully-election
+                  key: WAIT_BEFORE_NEXT_PING
 ---
 apiVersion: v1
 kind: ServiceAccount
