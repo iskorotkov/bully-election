@@ -6,6 +6,8 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/iskorotkov/bully-election/pkg/comms"
@@ -104,16 +106,6 @@ func main() {
 		}
 	}()
 
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-		defer cancel()
-
-		if err := server.Shutdown(ctx); err != nil {
-			logger.Fatal("server shutdown failed",
-				zap.Error(err))
-		}
-	}()
-
 	go func() {
 		for {
 			tickInterval := time.Second * 5
@@ -123,16 +115,31 @@ func main() {
 		}
 	}()
 
-	for {
-		select {
-		case msg := <-commServer.OnElectionRequest():
-			fsm.OnElectionMessage(msg.From)
-		case msg := <-commServer.OnVictoryRequest():
-			fsm.OnVictoryMessage(msg.From)
-		case msg := <-commClient.OnAliveResponse():
-			fsm.OnAliveResponse(msg.From)
-		case msg := <-commClient.OnElectionResponse():
-			fsm.OnElectionResponse(msg.From)
+	go func() {
+		for {
+			select {
+			case msg := <-commServer.OnElectionRequest():
+				fsm.OnElectionMessage(msg.From)
+			case msg := <-commServer.OnVictoryRequest():
+				fsm.OnVictoryMessage(msg.From)
+			case msg := <-commClient.OnAliveResponse():
+				fsm.OnAliveResponse(msg.From)
+			case msg := <-commClient.OnElectionResponse():
+				fsm.OnElectionResponse(msg.From)
+			}
 		}
+	}()
+
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	<-done
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		logger.Fatal("server shutdown failed",
+			zap.Error(err))
 	}
 }
