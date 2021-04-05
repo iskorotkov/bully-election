@@ -1,4 +1,4 @@
-version = v1.1.0
+version = v1.1.0-panic-on-error.1
 image = iskorotkov/bully-election
 namespace = chaos-app
 

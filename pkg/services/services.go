@@ -196,7 +196,7 @@ func (s *ServiceDiscovery) PingLeader() error {
 			logger.Error("couldn't send message",
 				zap.Any("message", request),
 				zap.Error(err))
-			return
+			panic(err)
 		}
 	}()
 
@@ -241,7 +241,7 @@ func (s *ServiceDiscovery) AnnounceLeadership() {
 					zap.Any("message", request),
 					zap.Any("pod", pod),
 					zap.Error(err))
-				return
+				panic(err)
 			}
 		}()
 	}
@@ -278,7 +278,7 @@ func (s *ServiceDiscovery) StartElection() {
 					zap.Any("message", request),
 					zap.Any("receiver", pl),
 					zap.Error(err))
-				return
+				panic(err)
 			}
 		}()
 	}
