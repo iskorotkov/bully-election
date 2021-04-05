@@ -188,17 +188,15 @@ func (s *ServiceDiscovery) PingLeader() error {
 		Message: messages.MessageAlive,
 	}
 
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
-		defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
+	defer cancel()
 
-		if err := s.client.Send(ctx, request, s.leader); err != nil {
-			logger.Error("couldn't send message",
-				zap.Any("message", request),
-				zap.Error(err))
-			return
-		}
-	}()
+	if err := s.client.Send(ctx, request, s.leader); err != nil {
+		logger.Error("couldn't send message",
+			zap.Any("message", request),
+			zap.Error(err))
+		return nil
+	}
 
 	return nil
 }
@@ -225,25 +223,23 @@ func (s *ServiceDiscovery) AnnounceLeadership() {
 			Message: messages.MessageVictory,
 		}
 
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), s.leadershipTimeout)
-			defer cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), s.leadershipTimeout)
+		defer cancel()
 
-			if pod.IP == "" {
-				logger.Warn("receiver doesn't have assigned IP address",
-					zap.Any("message", request),
-					zap.Any("pod", pod))
-				return
-			}
+		if pod.IP == "" {
+			logger.Warn("receiver doesn't have assigned IP address",
+				zap.Any("message", request),
+				zap.Any("pod", pod))
+			return
+		}
 
-			if err := s.client.Send(ctx, request, pod); err != nil {
-				logger.Error("couldn't send victory message",
-					zap.Any("message", request),
-					zap.Any("pod", pod),
-					zap.Error(err))
-				return
-			}
-		}()
+		if err := s.client.Send(ctx, request, pod); err != nil {
+			logger.Error("couldn't send victory message",
+				zap.Any("message", request),
+				zap.Any("pod", pod),
+				zap.Error(err))
+			return
+		}
 	}
 
 	logger.Info("leadership announced")
@@ -262,25 +258,23 @@ func (s *ServiceDiscovery) StartElection() {
 			Message: messages.MessageElection,
 		}
 
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), s.electionTimeout)
-			defer cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), s.electionTimeout)
+		defer cancel()
 
-			if pl.IP == "" {
-				logger.Warn("receiver doesn't have assigned IP address",
-					zap.Any("message", request),
-					zap.Any("receiver", pl))
-				return
-			}
+		if pl.IP == "" {
+			logger.Warn("receiver doesn't have assigned IP address",
+				zap.Any("message", request),
+				zap.Any("receiver", pl))
+			return
+		}
 
-			if err := s.client.Send(ctx, request, pl); err != nil {
-				logger.Error("couldn't send election message",
-					zap.Any("message", request),
-					zap.Any("receiver", pl),
-					zap.Error(err))
-				return
-			}
-		}()
+		if err := s.client.Send(ctx, request, pl); err != nil {
+			logger.Error("couldn't send election message",
+				zap.Any("message", request),
+				zap.Any("receiver", pl),
+				zap.Error(err))
+			return
+		}
 	}
 
 	logger.Info("election finished")
