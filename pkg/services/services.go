@@ -191,12 +191,13 @@ func (s *ServiceDiscovery) PingLeader() error {
 	ctx, cancel := context.WithTimeout(context.Background(), s.pingTimeout)
 	defer cancel()
 
-	if err := s.client.Send(ctx, request, s.leader); err != nil {
-		logger.Error("couldn't send message",
-			zap.Any("message", request),
-			zap.Error(err))
-		return nil
-	}
+	go func() {
+		if err := s.client.Send(ctx, request, s.leader); err != nil {
+			logger.Error("couldn't send message",
+				zap.Any("message", request),
+				zap.Error(err))
+		}
+	}()
 
 	return nil
 }
@@ -216,31 +217,33 @@ func (s *ServiceDiscovery) AnnounceLeadership() {
 
 	others := s.OthersSnapshot()
 
-	for _, pod := range others {
-		pod := pod
-		request := comms.Request{
-			From:    s.self,
-			Message: messages.MessageVictory,
-		}
+	go func() {
+		for _, pod := range others {
+			pod := pod
+			request := comms.Request{
+				From:    s.self,
+				Message: messages.MessageVictory,
+			}
 
-		ctx, cancel := context.WithTimeout(context.Background(), s.leadershipTimeout)
-		defer cancel()
+			ctx, cancel := context.WithTimeout(context.Background(), s.leadershipTimeout)
+			defer cancel()
 
-		if pod.IP == "" {
-			logger.Warn("receiver doesn't have assigned IP address",
-				zap.Any("message", request),
-				zap.Any("pod", pod))
-			return
-		}
+			if pod.IP == "" {
+				logger.Warn("receiver doesn't have assigned IP address",
+					zap.Any("message", request),
+					zap.Any("pod", pod))
+				return
+			}
 
-		if err := s.client.Send(ctx, request, pod); err != nil {
-			logger.Error("couldn't send victory message",
-				zap.Any("message", request),
-				zap.Any("pod", pod),
-				zap.Error(err))
-			return
+			if err := s.client.Send(ctx, request, pod); err != nil {
+				logger.Error("couldn't send victory message",
+					zap.Any("message", request),
+					zap.Any("pod", pod),
+					zap.Error(err))
+				return
+			}
 		}
-	}
+	}()
 
 	logger.Info("leadership announced")
 }
@@ -251,31 +254,33 @@ func (s *ServiceDiscovery) StartElection() {
 
 	potentialLeaders := s.PotentialLeadersSnapshot()
 
-	for _, pl := range potentialLeaders {
-		pl := pl
-		request := comms.Request{
-			From:    s.self,
-			Message: messages.MessageElection,
-		}
+	go func() {
+		for _, pl := range potentialLeaders {
+			pl := pl
+			request := comms.Request{
+				From:    s.self,
+				Message: messages.MessageElection,
+			}
 
-		ctx, cancel := context.WithTimeout(context.Background(), s.electionTimeout)
-		defer cancel()
+			ctx, cancel := context.WithTimeout(context.Background(), s.electionTimeout)
+			defer cancel()
 
-		if pl.IP == "" {
-			logger.Warn("receiver doesn't have assigned IP address",
-				zap.Any("message", request),
-				zap.Any("receiver", pl))
-			return
-		}
+			if pl.IP == "" {
+				logger.Warn("receiver doesn't have assigned IP address",
+					zap.Any("message", request),
+					zap.Any("receiver", pl))
+				return
+			}
 
-		if err := s.client.Send(ctx, request, pl); err != nil {
-			logger.Error("couldn't send election message",
-				zap.Any("message", request),
-				zap.Any("receiver", pl),
-				zap.Error(err))
-			return
+			if err := s.client.Send(ctx, request, pl); err != nil {
+				logger.Error("couldn't send election message",
+					zap.Any("message", request),
+					zap.Any("receiver", pl),
+					zap.Error(err))
+				return
+			}
 		}
-	}
+	}()
 
 	logger.Info("election finished")
 }

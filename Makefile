@@ -1,4 +1,4 @@
-version = v1.1.0-sync-requests.1
+version = v1.1.0-sync-requests.2
 image = iskorotkov/bully-election
 namespace = chaos-app
 
