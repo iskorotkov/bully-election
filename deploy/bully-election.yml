@@ -41,7 +41,7 @@ spec:
       serviceAccountName: bully-election
       containers:
         - name: bully-election
-          image: iskorotkov/bully-election:v1.1.0
+          image: iskorotkov/bully-election:v1.1.0-fsm-bug.1
           resources:
             limits:
               memory: "64Mi"

@@ -322,8 +322,7 @@ func (s *waitingToPing) OnVictoryMessage(source replicas.Replica) State {
 	s.logger.Warn("unexpected victory message",
 		zap.Any("source", source))
 
-	s.config.ServiceDiscovery.RememberLeader(source)
-	return waitToPing(s.config)
+	return startElection(s.config)
 }
 
 func (s *waitingToPing) OnAliveResponse(source replicas.Replica) State {
@@ -380,8 +379,7 @@ func (s *waitingForLeader) OnVictoryMessage(source replicas.Replica) State {
 	s.logger.Warn("unexpected victory message",
 		zap.Any("source", source))
 
-	s.config.ServiceDiscovery.RememberLeader(source)
-	return waitToPing(s.config)
+	return startElection(s.config)
 }
 
 func (s *waitingForLeader) OnAliveResponse(source replicas.Replica) State {
