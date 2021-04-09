@@ -1,4 +1,4 @@
-version = v1.1.0
+version = v1.1.0-single-fsm-loop.1
 image = iskorotkov/bully-election
 namespace = chaos-app
 

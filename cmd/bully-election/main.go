@@ -137,13 +137,6 @@ func main() {
 		for {
 			tickInterval := cfg.TickInterval
 
-			fsm.Tick(tickInterval)
-			time.Sleep(tickInterval)
-		}
-	}()
-
-	go func() {
-		for {
 			select {
 			case msg := <-commServer.OnElectionRequest():
 				fsm.OnElectionMessage(msg.From)
@@ -153,6 +146,9 @@ func main() {
 				fsm.OnAliveResponse(msg.From)
 			case msg := <-commClient.OnElectionResponse():
 				fsm.OnElectionResponse(msg.From)
+			default:
+				fsm.Tick(tickInterval)
+				time.Sleep(tickInterval)
 			}
 		}
 	}()
