@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/iskorotkov/bully-election/pkg/comms"
@@ -39,10 +38,6 @@ type ServiceDiscovery struct {
 
 	// Leader.
 	leader replicas.Replica
-
-	// Others.
-	othersInternal []replicas.Replica
-	othersM        *sync.RWMutex
 
 	// Logging.
 	logger *zap.Logger
@@ -91,8 +86,7 @@ func NewServiceDiscovery(config Config) (*ServiceDiscovery, error) {
 	}
 
 	var (
-		thisPod   corev1.Pod
-		otherPods []corev1.Pod
+		thisPod corev1.Pod
 	)
 
 	// Fetch info about pods.
@@ -109,10 +103,9 @@ func NewServiceDiscovery(config Config) (*ServiceDiscovery, error) {
 			return nil, err
 		}
 
-		for index, pod := range pods.Items {
+		for _, pod := range pods.Items {
 			if pod.GetName() == hostname {
 				thisPod = pod
-				otherPods = append(pods.Items[:index], pods.Items[index+1:]...)
 			}
 		}
 
@@ -137,30 +130,9 @@ func NewServiceDiscovery(config Config) (*ServiceDiscovery, error) {
 		// Replicas.
 		self:   self,
 		leader: replicas.ReplicaNone,
-		// Others.
-		othersInternal: replicas.FromPods(otherPods),
-		othersM:        &sync.RWMutex{},
 		// Logging.
 		logger: config.Logger,
 	}
-
-	go func() {
-		for {
-			others, err := s.refreshOthers()
-			if err != nil {
-				config.Logger.Error("",
-					zap.Error(err))
-			} else {
-				func() {
-					s.othersM.Lock()
-					defer s.othersM.Unlock()
-					s.othersInternal = others
-				}()
-			}
-
-			time.Sleep(config.RefreshInterval)
-		}
-	}()
 
 	return s, nil
 }
@@ -295,10 +267,14 @@ func (s *ServiceDiscovery) Leader() replicas.Replica {
 }
 
 func (s *ServiceDiscovery) OthersSnapshot() []replicas.Replica {
-	s.othersM.RLock()
-	defer s.othersM.RUnlock()
+	others, err := s.refreshOthers()
+	if err != nil {
+		s.logger.Error("",
+			zap.Error(err))
+		return make([]replicas.Replica, 0)
+	}
 
-	return s.othersInternal
+	return others
 }
 
 func (s *ServiceDiscovery) PotentialLeadersSnapshot() []replicas.Replica {
