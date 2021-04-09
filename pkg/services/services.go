@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/iskorotkov/bully-election/pkg/comms"
@@ -42,7 +41,6 @@ type ServiceDiscovery struct {
 
 	// Others.
 	othersInternal []replicas.Replica
-	othersM        *sync.RWMutex
 
 	// Logging.
 	logger *zap.Logger
@@ -139,7 +137,6 @@ func NewServiceDiscovery(config Config) (*ServiceDiscovery, error) {
 		leader: replicas.ReplicaNone,
 		// Others.
 		othersInternal: replicas.FromPods(otherPods),
-		othersM:        &sync.RWMutex{},
 		// Logging.
 		logger: config.Logger,
 	}
@@ -151,11 +148,7 @@ func NewServiceDiscovery(config Config) (*ServiceDiscovery, error) {
 				config.Logger.Error("",
 					zap.Error(err))
 			} else {
-				func() {
-					s.othersM.Lock()
-					defer s.othersM.Unlock()
-					s.othersInternal = others
-				}()
+				s.othersInternal = others
 			}
 
 			time.Sleep(config.RefreshInterval)
@@ -295,9 +288,6 @@ func (s *ServiceDiscovery) Leader() replicas.Replica {
 }
 
 func (s *ServiceDiscovery) OthersSnapshot() []replicas.Replica {
-	s.othersM.RLock()
-	defer s.othersM.RUnlock()
-
 	return s.othersInternal
 }
 

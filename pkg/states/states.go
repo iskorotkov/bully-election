@@ -1,7 +1,6 @@
 package states
 
 import (
-	"sync"
 	"time"
 
 	"github.com/iskorotkov/bully-election/pkg/replicas"
@@ -37,7 +36,6 @@ type Config struct {
 
 type FSM struct {
 	state  State
-	mu     *sync.RWMutex
 	logger *zap.Logger
 }
 
@@ -47,7 +45,6 @@ func NewFSM(config Config) *FSM {
 
 	return &FSM{
 		state:  startElection(config),
-		mu:     &sync.RWMutex{},
 		logger: config.Logger,
 	}
 }
@@ -56,18 +53,12 @@ func (f *FSM) Tick(elapsed time.Duration) {
 	f.logger.Debug("tick called",
 		zap.Duration("elapsed", elapsed))
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	f.state = f.state.Tick(elapsed)
 }
 
 func (f *FSM) OnElectionMessage(source replicas.Replica) {
 	f.logger.Debug("on election message",
 		zap.Any("source", source))
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
 
 	f.state = f.state.OnElectionMessage(source)
 }
@@ -76,18 +67,12 @@ func (f *FSM) OnVictoryMessage(source replicas.Replica) {
 	f.logger.Debug("on victory message",
 		zap.Any("source", source))
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	f.state = f.state.OnVictoryMessage(source)
 }
 
 func (f *FSM) OnAliveResponse(source replicas.Replica) {
 	f.logger.Debug("on alive response",
 		zap.Any("source", source))
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
 
 	f.state = f.state.OnAliveResponse(source)
 }
@@ -96,16 +81,10 @@ func (f *FSM) OnElectionResponse(source replicas.Replica) {
 	f.logger.Debug("on election response",
 		zap.Any("source", source))
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	f.state = f.state.OnElectionResponse(source)
 }
 
 func (f *FSM) State() State {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-
 	return f.state
 }
 
