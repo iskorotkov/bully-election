@@ -14,7 +14,7 @@ Bully election algorithm for distributed systems implemented in Go for deploying
 ## Monitor
 
 1. `/metrics` - use metrics endpoint to get info about replica state,
-1. Bully election dashboard - web app for monitoring entire cluster [repo](https://github.com/iskorotkov/bully-election-dashboard).
+1. Bully election dashboard - [web app for monitoring entire cluster](https://github.com/iskorotkov/bully-election-dashboard).
 
 ## Build
 
